@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Cor Interna - DePara</title>
+    <!-- TailwindCSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Biblioteca XLSX para exportação -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 280px;
+            background-color: #ff4444;
+            color: white;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -140px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #ff4444 transparent transparent transparent;
+        }
+        
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .codigo-invalido {
+            background-color: #fed7d7 !important;
+            border: 1px solid #feb2b2;
+            position: relative;
+        }
+        
+        .codigo-valido {
+            background-color: #d1fae5 !important;
+            border: 1px solid #a7f3d0;
+        }
+        
+        .coluna-origem {
+            background-color: #f0f9ff !important;
+            border-left: 3px solid #0ea5e9 !important;
+        }
+        
+        .legenda-item {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 20px;
+            font-size: 14px;
+        }
+        
+        .legenda-cor {
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+            border: 1px solid #ccc;
+        }
+        
+        .header-origem {
+            color: #000000 !important;
+            font-weight: 600;
+        }
+        
+        .editable-cell {
+            transition: all 0.2s ease;
+        }
+        
+        .editable-cell:hover {
+            background-color: #f0f9ff !important;
+            box-shadow: inset 0 0 0 2px #0ea5e9;
+        }
+        
+        .input-numerico {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+
+        .btn-edicao {
+            transition: all 0.2s ease;
+        }
+
+        .btn-edicao:hover {
+            transform: scale(1.05);
+        }
+
+        .celula-editando {
+            background-color: #fef3c7 !important;
+            box-shadow: inset 0 0 0 2px #f59e0b;
+        }
+
+        #btnSalvarTudo:disabled {
+            background-color: #9ca3af !important;
+            color: #6b7280 !important;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #btnSalvarTudo:disabled:hover {
+            transform: none;
+            background-color: #9ca3af !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+    <header class="mb-6 text-center">
+        <h1 class="text-3xl font-bold text-gray-800">Cor Interna - DePara</h1>
+        <p class="text-red-600 mt-2 font-semibold flex items-center justify-center gap-2">
+            <i class="fas fa-exclamation-circle"></i>
+            Clique Duas vezes para editar o Código WF
+        </p>
+        <p class="text-blue-600 mt-1 text-sm flex items-center justify-center gap-2">
+            A descrição será atualizada automaticamente quando o código for válido
+        </p>
+    </header>
+
+    <!-- Mensagens Flash -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="w-full max-w-6xl mb-4">
+                {% for category, message in messages %}
+                    <div class="p-4 rounded-md {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Legenda -->
+    <div class="w-full max-w-6xl mb-4 p-4 bg-white rounded-lg shadow-md">
+        <h3 class="font-bold mb-2">Legenda:</h3>
+        <div class="flex flex-wrap gap-4">
+            <div class="legenda-item">
+                <div class="legenda-cor bg-yellow-200"></div>
+                <span>Código S/DePara</span>
+            </div>
+            <div class="legenda-item">
+                <div class="legenda-cor bg-red-200"></div>
+                <span>Código Inválido (não encontrado na base WF)</span>
+            </div>
+            <div class="legenda-item">
+                <div class="legenda-cor bg-green-200"></div>
+                <span>Código Válido</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Botões de ação -->
+    <div class="flex justify-between items-center w-full max-w-6xl mb-4 flex-wrap gap-4">
+        <!-- Filtros e botão de apoio -->
+        <div class="flex gap-4 items-center flex-wrap">
+            <!-- Botão Salvar -->
+            <button id="btnSalvarTudo" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2 btn-edicao" disabled>
+                <i class="fas fa-save"></i> Salvar
+                <span id="contadorAlteracoes" class="bg-white text-green-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold ml-2">0</span>
+            </button>
+
+            <!-- Filtro S/DePara e Inválidos -->
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" id="filtroProblemas" class="rounded border-gray-300">
+                <span class="text-sm font-medium">Mostrar apenas S/DePara e Códigos Inválidos</span>
+            </label>
+
+            <!-- Botão de apoio: Tabela do WF -->
+            <button id="btnExportWF" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2 btn-edicao">
+                <i class="fas fa-table"></i> Tabela do WF
+            </button>
+        </div>
+
+        <!-- Grupo de botões principais -->
+        <div class="flex gap-4 flex-wrap">
+            <button id="btnExport" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2 btn-edicao">
+                <i class="fas fa-file-excel"></i> Exportar Excel
+            </button>
+
+            <button id="btnImport" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2 btn-edicao">
+                <i class="fas fa-file-import"></i> Importar Excel
+            </button>
+
+            <a href="{{ url_for('dashboard.dashboard') }}" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2 btn-edicao">
+                <i class="fas fa-arrow-left"></i> Voltar ao Dashboard
+            </a>
+
+            <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;">
+        </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded-lg shadow-lg flex items-center gap-4">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span class="text-gray-700">Processando...</span>
+        </div>
+    </div>
+
+    <!-- Tabela -->
+    <div class="w-full max-w-6xl overflow-x-auto bg-white shadow-md rounded-lg">
+        {% if registros %}
+        <table class="min-w-full divide-y divide-gray-200" id="tabelaCorInterna">
+            <thead class="bg-blue-600 text-white">
+                <tr>
+                    {% for coluna in colunas %}
+                        {% if coluna == 'id' %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase coluna-origem header-origem">ID</th>
+                        {% elif coluna == 'cor_cd' %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase coluna-origem header-origem">Codigo de Origem</th>
+                        {% elif coluna == 'cor_ds' %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase coluna-origem header-origem">Descrição de origem</th>
+                        {% else %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase">{{ coluna }}</th>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200" id="tbodyRegistros">
+                {% for registro in registros %}
+                <tr class="hover:bg-blue-50 registro-linha" 
+                    data-id="{{ registro.id }}"
+                    data-codigo-wf="{{ registro.Cor_Codigo or '' }}"
+                    data-descricao-wf="{{ registro.Cor_Descricao or '' }}">
+                    {% for coluna in colunas %}
+                        {% set valor = registro[coluna] %}
+                        {% set is_codigo_invalido = coluna == 'Cor_Codigo' and valor and valor != 'S/DePara' and valor|string not in cores_wf %}
+                        {% set is_codigo_valido = coluna == 'Cor_Codigo' and valor and valor != 'S/DePara' and valor|string in cores_wf %}
+                        {% set is_coluna_origem = coluna in ['id', 'cor_cd', 'cor_ds'] %}
+                        {% set is_coluna_codigo_editavel = coluna == 'Cor_Codigo' %}
+                        
+                        <td class="px-4 py-2 text-gray-700 text-sm 
+                                   {% if is_coluna_origem %} coluna-origem {% endif %}
+                                   {% if coluna == 'Cor_Codigo' and valor == 'S/DePara' %} bg-yellow-200 {% endif %}
+                                   {% if is_codigo_invalido %} codigo-invalido tooltip {% endif %}
+                                   {% if is_codigo_valido %} codigo-valido {% endif %}
+                                   {% if is_coluna_codigo_editavel %} editable-cell cursor-pointer {% endif %}"
+                            {% if is_coluna_codigo_editavel %} 
+                                data-field="{{ coluna }}" 
+                                data-original-value="{{ valor or '' }}"
+                            {% endif %}
+                            {% if is_codigo_invalido %}
+                                data-tooltip="Verifique se esse código existe na sua base Workflow de Produção"
+                            {% endif %}>
+                            
+                            {% if is_coluna_codigo_editavel %}
+                                <span class="editable-content">{{ valor or '' }}</span>
+                            {% else %}
+                                {{ valor or '' }}
+                            {% endif %}
+                            
+                            {% if is_codigo_invalido %}
+                                <span class="tooltiptext">
+                                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                                    Verifique se esse código existe na sua base Workflow de Produção
+                                </span>
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-8 text-center">
+            <p class="text-gray-500">Nenhum registro encontrado.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // Variáveis globais
+        let alteracoesPendentes = new Map();
+        let filtroAtivo = false;
+        let celulaEditando = null;
+        // Garantir que cores_wf seja sempre um Set válido
+        const cores_wf_raw = {{ cores_wf | tojson | safe }};
+        const cores_wf = new Set(Array.isArray(cores_wf_raw) ? cores_wf_raw : []);
+
+        // Exportar Excel
+        document.getElementById('btnExport').addEventListener('click', function() {
+            if (filtroAtivo) {
+                // Exportar apenas registros visíveis
+                exportarRegistrosFiltrados();
+            } else {
+                window.location.href = "{{ url_for('corinterna.exportar_corinterna') }}";
+            }
+        });
+
+        // Exportar Tabela WF
+        document.getElementById('btnExportWF').addEventListener('click', function() {
+            window.location.href = "{{ url_for('corinterna.export_wf') }}";
+        });
+
+        // Importar Excel
+        document.getElementById('btnImport').addEventListener('click', function() {
+            document.getElementById('fileInput').click();
+        });
+
+        // Filtro de problemas
+        document.getElementById('filtroProblemas').addEventListener('change', function() {
+            filtroAtivo = this.checked;
+            aplicarFiltro();
+            
+            // Apenas mudar o texto do botão, sem alterar a cor
+            const btnExport = document.getElementById('btnExport');
+            if (filtroAtivo) {
+                btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Filtrados';
+            } else {
+                btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
+            }
+        });
+
+        // Salvar todas as alterações
+        document.getElementById('btnSalvarTudo').addEventListener('click', salvarTodasAlteracoes);
+
+        document.getElementById('fileInput').addEventListener('change', function() {
+            const file = this.files[0];
+            if(!file) return;
+
+            // Mostrar loading
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch("{{ url_for('corinterna.importar_corinterna') }}", {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Esconder loading
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                
+                if(data.success) {
+                    mostrarMensagem(data.message, 'success');
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    mostrarMensagem('Erro: ' + data.message, 'error');
+                }
+            })
+            .catch(err => {
+                // Esconder loading
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                mostrarMensagem('Erro: ' + err, 'error');
+            })
+            .finally(() => {
+                // Limpar input file
+                this.value = '';
+            });
+        });
+
+        // Funcionalidade de edição inline - APENAS para Cor_Codigo
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabela = document.getElementById('tabelaCorInterna');
+            
+            if (!tabela) return;
+
+            // Adicionar evento de duplo clique para células editáveis
+            tabela.addEventListener('dblclick', function(e) {
+                const cell = e.target.closest('td');
+                if (cell && cell.classList.contains('editable-cell')) {
+                    // Se já está editando outra célula, cancelar a edição anterior
+                    if (celulaEditando && celulaEditando !== cell) {
+                        cancelarEdicao(celulaEditando);
+                    }
+                    iniciarEdicao(cell);
+                }
+            });
+
+            // Inicializar o estado do botão
+            atualizarContadorAlteracoes();
+        });
+
+        function aplicarFiltro() {
+            const linhas = document.querySelectorAll('.registro-linha');
+            linhas.forEach(linha => {
+                const codigoWf = linha.getAttribute('data-codigo-wf');
+                const isSDePara = codigoWf === 'S/DePara';
+                const isInvalido = linha.querySelector('.codigo-invalido') !== null;
+                
+                if (filtroAtivo) {
+                    linha.style.display = (isSDePara || isInvalido) ? '' : 'none';
+                } else {
+                    linha.style.display = '';
+                }
+            });
+        }
+
+        function exportarRegistrosFiltrados() {
+            const registrosFiltrados = [];
+            const linhasVisiveis = document.querySelectorAll('.registro-linha:not([style*="display: none"])');
+            
+            // Obter cabeçalhos da tabela
+            const headers = Array.from(document.querySelectorAll('thead th')).map(th => th.textContent.trim());
+            
+            linhasVisiveis.forEach(linha => {
+                const registro = {};
+                const celulas = linha.querySelectorAll('td');
+                
+                celulas.forEach((celula, index) => {
+                    const header = headers[index];
+                    let valor;
+                    
+                    // Para células editáveis, pegar o conteúdo do span
+                    const conteudoEditavel = celula.querySelector('.editable-content');
+                    if (conteudoEditavel) {
+                        valor = conteudoEditavel.textContent.trim(); // Remover espaços extras
+                    } else {
+                        valor = celula.textContent.trim(); // Remover espaços extras
+                    }
+                    
+                    registro[header] = valor;
+                });
+                
+                registrosFiltrados.push(registro);
+            });
+
+            if (registrosFiltrados.length === 0) {
+                mostrarMensagem('Nenhum registro para exportar com o filtro atual.', 'warning');
+                return;
+            }
+
+            // Mostrar loading
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+
+            // Enviar dados para o backend para exportação formatada
+            fetch("{{ url_for('corinterna.exportar_corinterna_filtrados') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    registros: registrosFiltrados,
+                    headers: headers
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Erro na exportação');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                // Esconder loading
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                
+                // Criar URL para download
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'CorInterna_Filtrado.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                mostrarMensagem(`Exportados ${registrosFiltrados.length} registros filtrados com formatação.`, 'success');
+            })
+            .catch(error => {
+                // Esconder loading
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                console.error('Erro na exportação:', error);
+                
+                // Fallback: exportação simples sem formatação
+                exportarRegistrosFiltradosSimples(registrosFiltrados, headers);
+            });
+        }
+
+        // Fallback para exportação simples sem formatação
+        function exportarRegistrosFiltradosSimples(registrosFiltrados, headers) {
+            try {
+                const worksheet = XLSX.utils.json_to_sheet(registrosFiltrados);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "CorInterna_Filtrado");
+                
+                // Gerar e baixar arquivo
+                XLSX.writeFile(workbook, "CorInterna_Filtrado_Simples.xlsx");
+                mostrarMensagem(`Exportados ${registrosFiltrados.length} registros filtrados (sem formatação).`, 'success');
+            } catch (error) {
+                mostrarMensagem('Erro ao exportar registros filtrados: ' + error, 'error');
+            }
+        }
+
+        function iniciarEdicao(cell) {
+            const row = cell.closest('tr');
+            const field = cell.getAttribute('data-field');
+            const originalValue = cell.getAttribute('data-original-value') || cell.textContent.trim();
+            
+            // Criar input para edição
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalValue;
+            input.className = 'w-full px-2 py-1 border border-blue-500 rounded input-numerico';
+            
+            // Adicionar placeholder para orientar o usuário
+            if (field === 'Cor_Codigo') {
+                input.placeholder = 'Apenas números ou "S/DePara" - Campo obrigatório';
+            }
+            
+            // VALIDAÇÃO EM TEMPO REAL PARA CÓDIGO WF - INCLUINDO CAMPO VAZIO
+            if (field === 'Cor_Codigo') {
+                input.addEventListener('input', function(e) {
+                    let value = e.target.value;
+                    
+                    // Se não for "S/DePara", permitir apenas números
+                    if (value !== 'S/DePara') {
+                        // Remover qualquer caractere que não seja número
+                        value = value.replace(/[^\d]/g, '');
+                        e.target.value = value;
+                    }
+                    
+                    // Validação visual em tempo real
+                    setTimeout(() => {
+                        const currentValue = e.target.value.trim();
+                        if (currentValue === '') {
+                            e.target.classList.add('border-red-500');
+                            e.target.classList.remove('border-green-500');
+                        } else if (currentValue === 'S/DePara' || (currentValue && cores_wf.has(currentValue))) {
+                            e.target.classList.remove('border-red-500');
+                            e.target.classList.add('border-green-500');
+                        } else {
+                            e.target.classList.add('border-red-500');
+                            e.target.classList.remove('border-green-500');
+                        }
+                    }, 100);
+                });
+                
+                // Aplicar validação visual inicial
+                setTimeout(() => {
+                    const currentValue = input.value.trim();
+                    if (currentValue === '') {
+                        input.classList.add('border-red-500');
+                    } else if (currentValue === 'S/DePara' || (currentValue && cores_wf.has(currentValue))) {
+                        input.classList.add('border-green-500');
+                    } else {
+                        input.classList.add('border-red-500');
+                    }
+                }, 100);
+            }
+
+            // Event listener para tecla Enter (confirmar) e Escape (cancelar)
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    confirmarEdicao(cell);
+                } else if (e.key === 'Escape') {
+                    cancelarEdicao(cell);
+                }
+            });
+
+            // Também salvar ao perder o foco (blur)
+            input.addEventListener('blur', function() {
+                confirmarEdicao(cell);
+            });
+            
+            // Substituir conteúdo da célula pelo input
+            const conteudoEditavel = cell.querySelector('.editable-content');
+            if (conteudoEditavel) {
+                conteudoEditavel.style.display = 'none';
+                cell.appendChild(input);
+            } else {
+                // Se não existe elemento de conteúdo editável, criar um
+                const novoConteudo = document.createElement('span');
+                novoConteudo.className = 'editable-content';
+                cell.innerHTML = '';
+                cell.appendChild(novoConteudo);
+                cell.appendChild(input);
+            }
+            
+            // Adicionar classe de edição
+            cell.classList.add('celula-editando');
+            
+            input.focus();
+            input.select();
+
+            // Registrar célula em edição
+            celulaEditando = cell;
+        }
+
+        function confirmarEdicao(cell) {
+            const row = cell.closest('tr');
+            const field = cell.getAttribute('data-field');
+            const input = cell.querySelector('input');
+            
+            if (!input) {
+                console.error('Input não encontrado na célula');
+                return;
+            }
+            
+            const newValue = input.value.trim();
+            const originalValue = cell.getAttribute('data-original-value') || '';
+            const recordId = row.getAttribute('data-id');
+            
+            if (!recordId) {
+                console.error('ID do registro não encontrado');
+                return;
+            }
+            
+            // VALIDAÇÃO FINAL PARA CÓDIGO WF - INCLUINDO CAMPO VAZIO
+            if (field === 'Cor_Codigo') {
+                // Verificar se está vazio
+                if (newValue === '') {
+                    mostrarMensagem('Código WF não pode estar vazio. Use números ou "S/DePara".', 'error');
+                    return;
+                }
+                
+                // Se não for "S/DePara", verificar se contém apenas números
+                if (newValue !== 'S/DePara') {
+                    if (!/^\d+$/.test(newValue)) {
+                        mostrarMensagem('Código WF deve conter apenas números ou "S/DePara"', 'error');
+                        return;
+                    }
+                }
+            }
+            
+            // Restaurar conteúdo da célula
+            const conteudoEditavel = cell.querySelector('.editable-content');
+            let elementoConteudo = conteudoEditavel;
+            
+            if (!elementoConteudo) {
+                elementoConteudo = document.createElement('span');
+                elementoConteudo.className = 'editable-content';
+                cell.innerHTML = '';
+                cell.appendChild(elementoConteudo);
+            } else {
+                const input = cell.querySelector('input');
+                if (input) {
+                    cell.removeChild(input);
+                }
+                elementoConteudo.style.display = '';
+            }
+
+            // Verificar se o valor foi alterado
+            if (newValue === originalValue) {
+                elementoConteudo.textContent = newValue;
+                finalizarEdicao(cell);
+                return;
+            }
+
+            // Adicionar à lista de alterações pendentes
+            const chaveAlteracao = `${recordId}-${field}`;
+            alteracoesPendentes.set(chaveAlteracao, {
+                id: recordId,
+                field: field,
+                value: newValue,
+                originalValue: originalValue,
+                cell: cell,
+                row: row
+            });
+
+            // Atualizar visualização
+            elementoConteudo.textContent = newValue;
+            cell.setAttribute('data-original-value', newValue);
+
+            // Se for alteração de código WF, atualizar o estado da célula
+            if (field === 'Cor_Codigo') {
+                atualizarEstadoCelulaCodigo(cell, newValue);
+                // Atualizar o atributo data-codigo-wf na linha
+                row.setAttribute('data-codigo-wf', newValue);
+                
+                // Se o código não for S/DePara, verificar descrição automaticamente
+                if (newValue && newValue !== 'S/DePara') {
+                    verificarDescricaoWF(newValue, row);
+                } else if (newValue === 'S/DePara') {
+                    // Se for S/DePara, limpar a descrição
+                    atualizarDescricaoLinha(row, '');
+                }
+            }
+
+            // Destacar célula alterada (mas não editando)
+            cell.classList.remove('celula-editando');
+            cell.classList.add('bg-yellow-100');
+            
+            // Atualizar contador e controlar botão
+            atualizarContadorAlteracoes();
+            
+            mostrarMensagem(`Alteração registrada. Clique em "Salvar" para confirmar.`, 'info');
+            
+            finalizarEdicao(cell);
+        }
+
+        function cancelarEdicao(cell) {
+            const originalValue = cell.getAttribute('data-original-value') || '';
+            
+            // Restaurar conteúdo da célula
+            const conteudoEditavel = cell.querySelector('.editable-content');
+            let elementoConteudo = conteudoEditavel;
+            
+            if (!elementoConteudo) {
+                elementoConteudo = document.createElement('span');
+                elementoConteudo.className = 'editable-content';
+                cell.innerHTML = '';
+                cell.appendChild(elementoConteudo);
+            } else {
+                const input = cell.querySelector('input');
+                if (input) {
+                    cell.removeChild(input);
+                }
+                elementoConteudo.style.display = '';
+            }
+            
+            elementoConteudo.textContent = originalValue;
+            
+            finalizarEdicao(cell);
+            
+            // Atualizar contador após cancelar
+            atualizarContadorAlteracoes();
+        }
+
+        function finalizarEdicao(cell) {
+            // Remover classe de edição
+            cell.classList.remove('celula-editando');
+            
+            // Limpar registro de célula em edição
+            celulaEditando = null;
+        }
+
+        function atualizarEstadoCelulaCodigo(cell, codigo) {
+            // Remover todas as classes de estado
+            cell.classList.remove('bg-yellow-200', 'codigo-invalido', 'codigo-valido', 'tooltip');
+            
+            // Remover tooltip existente
+            const existingTooltip = cell.querySelector('.tooltiptext');
+            if (existingTooltip) {
+                existingTooltip.remove();
+            }
+
+            if (codigo === 'S/DePara') {
+                cell.classList.add('bg-yellow-200');
+            } else if (codigo && cores_wf.has(codigo)) {
+                cell.classList.add('codigo-valido');
+            } else {
+                // Inclui casos: vazio, null, undefined, ou não está na base WF
+                cell.classList.add('codigo-invalido', 'tooltip');
+                // Adicionar tooltip
+                const tooltip = document.createElement('span');
+                tooltip.className = 'tooltiptext';
+                
+                let mensagemErro = 'Verifique se esse código existe na sua base Workflow de Produção';
+                if (!codigo || codigo === '') {
+                    mensagemErro = 'Código WF não pode estar vazio. Use números ou "S/DePara".';
+                }
+                
+                tooltip.innerHTML = `<i class="fas fa-exclamation-triangle mr-1"></i> ${mensagemErro}`;
+                cell.appendChild(tooltip);
+            }
+        }
+
+        function atualizarContadorAlteracoes() {
+            const contador = document.getElementById('contadorAlteracoes');
+            const btnSalvarTudo = document.getElementById('btnSalvarTudo');
+            
+            if (contador) {
+                contador.textContent = alteracoesPendentes.size;
+            }
+            
+            if (btnSalvarTudo) {
+                // Habilitar/desabilitar baseado no número de alterações
+                btnSalvarTudo.disabled = alteracoesPendentes.size === 0;
+                
+                // Atualizar cores conforme estado
+                if (alteracoesPendentes.size > 0) {
+                    btnSalvarTudo.classList.remove('bg-gray-400');
+                    btnSalvarTudo.classList.add('bg-green-600', 'hover:bg-green-700');
+                } else {
+                    btnSalvarTudo.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    btnSalvarTudo.classList.add('bg-gray-400');
+                }
+            }
+        }
+
+        function verificarDescricaoWF(codigo, row) {
+            // Apenas busca a descrição se o código for válido e não for S/DePara
+            if (codigo && codigo !== 'S/DePara' && cores_wf.has(codigo)) {
+                fetch(`{{ url_for('corinterna.get_descricao_wf', codigo='') }}${codigo}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const descricaoAtual = row.getAttribute('data-descricao-wf');
+                            const novaDescricao = data.descricao;
+                            
+                            // Atualizar a descrição automaticamente apenas se for diferente
+                            if (descricaoAtual !== novaDescricao) {
+                                atualizarDescricaoLinha(row, novaDescricao);
+                                mostrarMensagem(`Descrição atualizada automaticamente para o código ${codigo}`, 'success');
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro ao verificar descrição WF:', error);
+                    });
+            }
+        }
+
+        function atualizarDescricaoLinha(row, novaDescricao) {
+            // Atualizar o atributo data-descricao-wf na linha
+            row.setAttribute('data-descricao-wf', novaDescricao);
+            
+            // Encontrar a célula de descrição (Cor_Descricao)
+            const celulas = row.querySelectorAll('td');
+            let celulaDescricao = null;
+            
+            // Procurar pela célula que contém a descrição
+            for (let i = 0; i < celulas.length; i++) {
+                if (celulas[i].textContent.includes(row.getAttribute('data-descricao-wf'))) {
+                    celulaDescricao = celulas[i];
+                    break;
+                }
+            }
+            
+            // Se não encontrou pela descrição, tenta pelo índice (5ª coluna)
+            if (!celulaDescricao && celulas.length >= 5) {
+                celulaDescricao = celulas[4]; // 5ª coluna (índice 4)
+            }
+            
+            if (celulaDescricao) {
+                // Atualizar o texto da célula de descrição
+                celulaDescricao.textContent = novaDescricao;
+                celulaDescricao.classList.add('bg-green-100');
+                
+                // Adicionar à lista de alterações pendentes para salvar no banco
+                const chaveAlteracao = `${row.getAttribute('data-id')}-Cor_Descricao`;
+                alteracoesPendentes.set(chaveAlteracao, {
+                    id: row.getAttribute('data-id'),
+                    field: 'Cor_Descricao',
+                    value: novaDescricao,
+                    originalValue: row.getAttribute('data-descricao-wf'),
+                    cell: celulaDescricao,
+                    row: row
+                });
+                
+                atualizarContadorAlteracoes();
+            }
+        }
+
+        function salvarTodasAlteracoes() {
+            if (alteracoesPendentes.size === 0) {
+                mostrarMensagem('Nenhuma alteração pendente para salvar.', 'info');
+                return;
+            }
+
+            // Mostrar loading
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            document.getElementById('btnSalvarTudo').disabled = true;
+            document.getElementById('btnSalvarTudo').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+
+            const updates = Array.from(alteracoesPendentes.values()).map(alt => ({
+                id: alt.id,
+                field: alt.field,
+                value: alt.value
+            }));
+
+            fetch("{{ url_for('corinterna.update_batch') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ updates: updates })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Esconder loading
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('btnSalvarTudo').disabled = false;
+                document.getElementById('btnSalvarTudo').innerHTML = '<i class="fas fa-save"></i> Salvar';
+
+                if (data.success) {
+                    // Limpar alterações pendentes
+                    alteracoesPendentes.clear();
+                    atualizarContadorAlteracoes();
+                    
+                    // Remover destaque das células
+                    document.querySelectorAll('.bg-yellow-100, .bg-green-100').forEach(cell => {
+                        cell.classList.remove('bg-yellow-100', 'bg-green-100');
+                    });
+                    
+                    mostrarMensagem(`Alterações salvas com sucesso! ${data.success_count} atualizações realizadas.`, 'success');
+                    
+                    // Recarregar a página após 2 segundos para atualizar validações
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    mostrarMensagem('Erro ao salvar alterações: ' + data.message, 'error');
+                }
+            })
+            .catch(error => {
+                // Esconder loading
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('btnSalvarTudo').disabled = false;
+                document.getElementById('btnSalvarTudo').innerHTML = '<i class="fas fa-save"></i> Salvar';
+                
+                mostrarMensagem('Erro ao salvar alterações: ' + error, 'error');
+            });
+        }
+
+        function mostrarMensagem(mensagem, tipo, duracao = 5000) {
+            // Criar elemento de mensagem
+            const mensagemDiv = document.createElement('div');
+            mensagemDiv.className = `fixed top-4 right-4 p-4 rounded-md z-50 ${
+                tipo === 'success' ? 'bg-green-100 text-green-700 border border-green-300' : 
+                tipo === 'error' ? 'bg-red-100 text-red-700 border border-red-300' :
+                tipo === 'info' ? 'bg-blue-100 text-blue-700 border border-blue-300' :
+                tipo === 'warning' ? 'bg-yellow-100 text-yellow-700 border border-yellow-300' :
+                'bg-gray-100 text-gray-700 border border-gray-300'
+            }`;
+            mensagemDiv.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas ${
+                        tipo === 'success' ? 'fa-check-circle' : 
+                        tipo === 'error' ? 'fa-exclamation-circle' :
+                        tipo === 'info' ? 'fa-info-circle' : 
+                        tipo === 'warning' ? 'fa-exclamation-triangle' : 'fa-bell'
+                    } mr-2"></i>
+                    <span>${mensagem}</span>
+                </div>
+            `;
+            
+            document.body.appendChild(mensagemDiv);
+            
+            // Remover após o tempo especificado
+            setTimeout(() => {
+                if (mensagemDiv.parentNode) {
+                    mensagemDiv.parentNode.removeChild(mensagemDiv);
+                }
+            }, duracao);
+        }
+
+        // Prevenir que o usuário saia da página com alterações pendentes
+        window.addEventListener('beforeunload', function(e) {
+            if (alteracoesPendentes.size > 0) {
+                e.preventDefault();
+                e.returnValue = 'Você tem alterações não salvas. Tem certeza que deseja sair?';
+                return e.returnValue;
+            }
+        });
+    </script>
+
+</body>
+</html>

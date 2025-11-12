@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Teste Update</title>
+</head>
+<body>
+    <h1>Teste de Update</h1>
+    
+    <button onclick="testarUpdate()">Testar Update</button>
+    
+    <div id="resultado"></div>
+
+    <script>
+        function testarUpdate() {
+            const data = {
+                id: '001', // Use um ID que exista na sua tabela
+                field: 'CondicaoPagamento_Codigo',
+                value: 'TESTE_' + Date.now()
+            };
+
+            fetch('/condicao_pagamento/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                document.getElementById('resultado').innerHTML = `Status: ${response.status}`;
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('resultado').innerHTML += `<br>Resposta: ${JSON.stringify(data)}`;
+            })
+            .catch(error => {
+                document.getElementById('resultado').innerHTML = `Erro: ${error}`;
+            });
+        }
+    </script>
+</body>
+</html>

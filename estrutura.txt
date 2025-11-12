@@ -1,0 +1,273 @@
+Listagem de caminhos de pasta para o volume OS
+O número de série do volume é 1877-BB51
+C:.
+|   .env
+|   app.py
+|   backup_windows.ps1
+|   config.py
+|   config_windows.py
+|   corrigir_final.py
+|   corrigir_templates.bat
+|   depara.bak
+|   deploy_windows.ps1
+|   estrutura.txt
+|   limpeza.py
+|   logger.py
+|   make.bat
+|   Makefile
+|   monitor_windows.ps1
+|   requirements.txt
+|   run.bat
+|   run_flask.py
+|   setup_windows.bat
+|   teste.py
+|   web.config
+|   
++---.vscode
+|       settings.json
+|       
++---auth
+|   |   security.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           routes.cpython-312.pyc
+|           security.cpython-312.pyc
+|           __init__.cpython-312.pyc
+|           
++---build
++---db
+|   |   connection.py
+|   |   __ini__.py
+|   |   
+|   \---__pycache__
+|           connection.cpython-312.pyc
+|           
++---logs
+|       app.log
+|       auth.log
+|       
++---models
+|       empresa.py
+|       usuario.py
+|       __init__.py
+|       
++---routes
+|   |   agentecobrador.py
+|   |   auth.py
+|   |   banco.py
+|   |   centroresultado.py
+|   |   clasmontadora.py
+|   |   combustivel.py
+|   |   condicao_pagamento.py
+|   |   contagerencial.py
+|   |   corexterna.py
+|   |   corinterna.py
+|   |   dashboard.py
+|   |   departamento.py
+|   |   empresas.py
+|   |   envio_arquivo.py
+|   |   equipe.py
+|   |   escolaridade.py
+|   |   escopos.py
+|   |   estado.py
+|   |   estadocivil.py
+|   |   estoque.py
+|   |   grupolucratividade.py
+|   |   grupoproduto.py
+|   |   historicopadrao.py
+|   |   marca.py
+|   |   modeloveiculo.py
+|   |   municipio.py
+|   |   naturezaoperacao.py
+|   |   opcional.py
+|   |   pais.py
+|   |   pessoacodfabricante.py
+|   |   planoconta.py
+|   |   procedencia.py
+|   |   profissao.py
+|   |   projetos.py
+|   |   routes.py
+|   |   segmentomercado.py
+|   |   setorservico.py
+|   |   subconta.py
+|   |   tabelapreco.py
+|   |   tipocobranca.py
+|   |   tipocreditodebito.py
+|   |   tipodocumento.py
+|   |   tipoficharazao.py
+|   |   tipologradouro.py
+|   |   tipolote.py
+|   |   tipoos.py
+|   |   tipoproduto.py
+|   |   tiposervico.py
+|   |   tiposubconta.py
+|   |   tipotitulo.py
+|   |   tmo.py
+|   |   unidade.py
+|   |   usuarios.py
+|   |   usuario_depara.py
+|   |   veiculoano.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           agentecobrador.cpython-312.pyc
+|           auth.cpython-312.pyc
+|           banco.cpython-312.pyc
+|           centroresultado.cpython-312.pyc
+|           clasmontadora.cpython-312.pyc
+|           combustivel.cpython-312.pyc
+|           condicao_pagamento.cpython-312.pyc
+|           contagerencial.cpython-312.pyc
+|           corexterna.cpython-312.pyc
+|           corinterna.cpython-312.pyc
+|           dashboard.cpython-312.pyc
+|           departamento.cpython-312.pyc
+|           empresas.cpython-312.pyc
+|           envio_arquivo.cpython-312.pyc
+|           equipe.cpython-312.pyc
+|           escolaridade.cpython-312.pyc
+|           escopos.cpython-312.pyc
+|           estado.cpython-312.pyc
+|           estadocivil.cpython-312.pyc
+|           estoque.cpython-312.pyc
+|           grupolucratividade.cpython-312.pyc
+|           grupoproduto.cpython-312.pyc
+|           historicopadrao.cpython-312.pyc
+|           marca.cpython-312.pyc
+|           modeloveiculo.cpython-312.pyc
+|           municipio.cpython-312.pyc
+|           naturezaoperacao.cpython-312.pyc
+|           opcional.cpython-312.pyc
+|           pais.cpython-312.pyc
+|           pessoacodfabricante.cpython-312.pyc
+|           planoconta.cpython-312.pyc
+|           procedencia.cpython-312.pyc
+|           profissao.cpython-312.pyc
+|           projetos.cpython-312.pyc
+|           routes.cpython-312.pyc
+|           segmentomercado.cpython-312.pyc
+|           setorservico.cpython-312.pyc
+|           subconta.cpython-312.pyc
+|           tabelapreco.cpython-312.pyc
+|           tipocobranca.cpython-312.pyc
+|           tipocreditodebito.cpython-312.pyc
+|           tipodocumento.cpython-312.pyc
+|           tipoficharazao.cpython-312.pyc
+|           tipologradouro.cpython-312.pyc
+|           tipolote.cpython-312.pyc
+|           tipoos.cpython-312.pyc
+|           tipoproduto.cpython-312.pyc
+|           tiposervico.cpython-312.pyc
+|           tiposubconta.cpython-312.pyc
+|           tipotitulo.cpython-312.pyc
+|           tmo.cpython-312.pyc
+|           unidade.cpython-312.pyc
+|           usuarios.cpython-312.pyc
+|           usuario_depara.cpython-312.pyc
+|           veiculoano.cpython-312.pyc
+|           __init__.cpython-312.pyc
+|           
++---source
+|   |   conf.py
+|   |   index.rst
+|   |   
+|   +---_static
+|   \---_templates
++---static
+|   +---css
+|   |       dashboard.css
+|   |       
+|   \---js
+|           dashboard.js
+|           
++---templates
+|   |   agentecobrador.html
+|   |   banco.html
+|   |   base.html
+|   |   centroresultado.html
+|   |   clasmontadora.html
+|   |   combustivel.html
+|   |   condicao_pagamento.html
+|   |   contagerencial.html
+|   |   corexterna.html
+|   |   corinterna.html
+|   |   dashboard.html
+|   |   departamento.html
+|   |   detalhes_tabela.html
+|   |   empresas.html
+|   |   envio_arquivo.html
+|   |   equipe.html
+|   |   escolaridade.html
+|   |   escopos.html
+|   |   estado.html
+|   |   estadocivil.html
+|   |   estoque.html
+|   |   grupolucratividade.html
+|   |   grupoproduto.html
+|   |   historicopadrao.html
+|   |   login.html
+|   |   marca.html
+|   |   modeloveiculo.html
+|   |   municipio.html
+|   |   naturezaoperacao.html
+|   |   opcional.html
+|   |   pais.html
+|   |   pessoacodfabricante.html
+|   |   planoconta.html
+|   |   procedencia.html
+|   |   profissao.html
+|   |   projetos.html
+|   |   segmentomercado.html
+|   |   selecionar_empresa.html
+|   |   selecionar_projeto.html
+|   |   setorservico.html
+|   |   style.css
+|   |   subconta.html
+|   |   tabelapreco.html
+|   |   teste_condicao.html
+|   |   tipocobranca.html
+|   |   tipocreditodebito.html
+|   |   tipodocumento.html
+|   |   tipoficharazao.html
+|   |   tipologradouro.html
+|   |   tipolote.html
+|   |   tipoos.html
+|   |   tipoproduto.html
+|   |   tiposervico.html
+|   |   tiposubconta.html
+|   |   tipotitulo.html
+|   |   tmo.html
+|   |   unidade.html
+|   |   usuario.html
+|   |   usuarios.html
+|   |   veiculoano.html
+|   |   
+|   \---partials
+|           header.html
+|           scripts.html
+|           sidebar.html
+|           
++---utils
+|   |   dados_depara.py
+|   |   data_processing.py
+|   |   data_validation.py
+|   |   layout_configs.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           dados_depara.cpython-312.pyc
+|           data_processing.cpython-312.pyc
+|           data_validation.cpython-312.pyc
+|           layout_configs.cpython-312.pyc
+|           __init__.cpython-312.pyc
+|           
++---venv
+|   \---Scripts
+|           python.exe
+|           
+\---__pycache__
+        app.cpython-312.pyc
+        config.cpython-312.pyc
+        logger.cpython-312.pyc
+        

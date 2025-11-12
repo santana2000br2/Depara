@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DE x PARA - Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <style>
+        /* Estilos para os cards de progresso das categorias */
+        .categorias-progresso {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .categoria-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #007bff;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .categoria-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            text-decoration: none;
+            color: inherit;
+            border-left-color: #0056b3;
+        }
+
+        .categoria-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .categoria-percentual {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .categoria-card:hover .categoria-percentual {
+            color: #0056b3;
+        }
+
+        .categoria-progresso-bar {
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .categoria-progresso-fill {
+            height: 100%;
+            background: #007bff;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .categoria-card:hover .categoria-progresso-fill {
+            background: #0056b3;
+        }
+
+        .categoria-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .categoria-link {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .categoria-link:hover {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        /* Cards de Total Geral */
+        .total-geral-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #28a745;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: all 0.3s ease;
+        }
+
+        .total-pendente-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #ffc107;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: all 0.3s ease;
+        }
+
+        .total-geral-card:hover, .total-pendente-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .total-geral-card h3, .total-pendente-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .total-geral-valor {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        .total-pendente-valor {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffc107;
+        }
+
+        .total-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        /* Mensagem quando não há escopos */
+        .no-scope-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6c757d;
+        }
+
+        .no-scope-message p {
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+            color: white;
+            text-decoration: none;
+        }
+
+        /* Adicionar IDs para os quadros para navegação */
+        .content-area {
+            scroll-margin-top: 20px; /* Espaço para não ficar colado no topo */
+            position: relative; /* Para posicionamento da seta */
+        }
+
+        /* Ajuste para texto preto nas barras de progresso */
+        .progress-text {
+            color: #000000 !important;
+            text-shadow: none !important;
+            font-weight: 600;
+        }
+
+        .progress-fill .progress-text {
+            color: #000000 !important;
+        }
+
+        .categoria-progresso-fill .progress-text {
+            color: #000000 !important;
+        }
+
+        /* Estilo para a seta de voltar ao topo */
+        .back-to-top {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+
+        .back-to-top:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        /* Data na sidebar */
+        .sidebar-update {
+            text-align: center;
+            padding: 10px 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.8rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- DEBUG Section (opcional) -->
+    <div style="background: #f8f9fa; padding: 10px; margin: 10px; border: 1px solid #ddd; display: none;" id="debug-section">
+        <h3>DEBUG INFO</h3>
+        <p>Banco: {{ projeto_selecionado.DadosGX if projeto_selecionado else 'N/A' }}</p>
+        <p>cond_pag: {{ cond_pag | tojson }}</p>
+        <p>escol: {{ escol | tojson }}</p>
+        <p>estado: {{ estado | tojson }}</p>
+    </div>
+
+    <script>
+        // Para ver os dados de debug, altere display: none para display: block acima
+        console.log("=== DASHBOARD DEBUG ===");
+        console.log("Banco:", "{{ projeto_selecionado.DadosGX if projeto_selecionado else 'N/A' }}");
+        console.log("cond_pag:", {{ cond_pag | tojson | safe }});
+        console.log("escol:", {{ escol | tojson | safe }});
+        console.log("estado:", {{ estado | tojson | safe }});
+    </script>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>DE X PARA</h2>
+            <p>Sistema de Autenticação</p>
+        </div>
+
+        <ul class="sidebar-menu">
+            <li><a href="#" class="active"><i class="fas fa-home"></i> <span>Dashboard</span></a></li>
+            
+            <!-- OPÇÃO PARA TROCAR PROJETO -->
+            <li>
+                <a href="{{ url_for('auth.trocar_projeto') }}">
+                    <i class="fas fa-sync-alt"></i> <span>Trocar Projeto</span>
+                </a>
+            </li>
+            
+            {% if usuario.adm == 1 %}
+            <!-- OPÇÃO DE ENVIO DE ARQUIVO - APENAS PARA ADM -->
+            <li>
+                <a href="{{ url_for('envio_arquivo.index') }}">
+                    <i class="fas fa-file-upload"></i> <span>Envio de Arquivo</span>
+                </a>
+            </li>
+
+            <!-- GERENCIAR USUÁRIOS - APENAS PARA ADM -->
+            <li>
+                <a href="{{ url_for('usuarios.gerenciar_usuarios') }}">
+                    <i class="fas fa-users-cog"></i> <span>Gerenciar Usuários</span>
+                </a>
+            </li>
+            {% endif %}
+            
+            <li><a href="{{ url_for('dashboard.logout') }}"><i class="fas fa-sign-out-alt"></i> <span>Sair</span></a></li>
+        </ul>
+
+        <!-- Data de atualização na sidebar -->
+        <div class="sidebar-update">
+            <p>Atualizado em: <span id="sidebar-update-date"></span></p>
+        </div>
+        
+        <button class="toggle-sidebar" id="toggleSidebar">
+            <i class="fas fa-chevron-left"></i>
+            <span>Recolher Menu</span>
+        </button>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="header">
+            <button class="toggle-sidebar-mobile" id="toggleSidebarMobile">
+                <i class="fas fa-bars"></i>
+            </button>
+            <h1 style="text-align: center;">De X Para - {{ projeto_nome }}</h1>
+            <div class="user-info">
+                <div class="user-avatar">{{ usuario.usuario[0] if usuario and usuario.usuario else 'U' }}</div>
+                <div>
+                    <div>{{ usuario.usuario if usuario and usuario.usuario else 'Usuário' }}</div>
+                    <small>{{ projeto_nome }}</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cards de Total Geral -->
+        <div class="categorias-progresso">
+            <!-- Card Total Geral -->
+            <div class="total-geral-card">
+                <h3>
+                    Total Geral
+                    <span class="total-geral-valor">{{ progresso_total.total_qtd }}</span>
+                </h3>
+                <div class="total-stats">
+                    <span>Total de registros de todos os quadros</span>
+                </div>
+            </div>
+
+            <!-- Card Total Pendente -->
+            <div class="total-pendente-card">
+                <h3>
+                    Total Pendente
+                    <span class="total-pendente-valor">{{ progresso_total.total_pendente }}</span>
+                </h3>
+                <div class="total-stats">
+                    <span>Registros pendentes de todos os quadros</span>
+                </div>
+            </div>
+
+            <!-- Card Progresso Total -->
+            <div class="categoria-card">
+                <h3>
+                    Progresso Total
+                    <span class="categoria-percentual">{{ progresso_total.percentual_total }}%</span>
+                </h3>
+                <div class="categoria-progresso-bar">
+                    <div class="categoria-progresso-fill" style="width: {{ progresso_total.percentual_total }}%"></div>
+                </div>
+                <div class="categoria-stats">
+                    <span>Concluído: {{ progresso_total.total_concluido }}</span>
+                    <span>Pendente: {{ progresso_total.total_pendente }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cards de Progresso por Categoria -->
+        {% if progresso_categorias %}
+        <div class="categorias-progresso">
+            {% for escopo, percentual in progresso_categorias.items() %}
+            <a href="#quadro-{{ escopo|lower }}" class="categoria-card categoria-link">
+                <h3>
+                    {{ categorias_nomes[escopo] }}
+                    <span class="categoria-percentual">{{ percentual }}%</span>
+                </h3>
+                <div class="categoria-progresso-bar">
+                    <div class="categoria-progresso-fill" style="width: {{ percentual }}%"></div>
+                </div>
+                <div class="categoria-stats">
+                    <span>Progresso da Categoria</span>
+                    <span>{{ percentual }}% Concluído</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Quadro PESSOA - Mostrar apenas se escopo PESSOA estiver habilitado -->
+        {% if 'PESSOA' in escopos_habilitados %}
+        <div class="content-area" id="quadro-pessoa">
+            <div class="content-header">
+                <h2>Pessoa</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-pessoa"></tbody>
+            </table>
+            <div class="table-footer">
+                {% if usuario.adm == 1 %}
+                <p style="margin-top: 10px;">
+                    <i class="fas fa-star" style="color: gold;"></i> 
+                    Você tem acesso de administrador
+                </p>
+                {% endif %}
+            </div>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Quadro GERAL - Mostrar apenas se escopo GERAL estiver habilitado -->
+        {% if 'GERAL' in escopos_habilitados %}
+        <div class="content-area" id="quadro-geral">
+            <div class="content-header">
+                <h2>Geral</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-geral"></tbody>
+            </table>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Quadro USUÁRIOS - Mostrar apenas se escopo GERAL estiver habilitado -->
+        {% if 'GERAL' in escopos_habilitados %}
+        <div class="content-area" id="quadro-usuarios">
+            <div class="content-header">
+                <h2>Usuários</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-usuarios"></tbody>
+            </table>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- QUADRO PRODUTO - Mostrar apenas se escopo PRODUTOS estiver habilitado -->
+        {% if 'PRODUTOS' in escopos_habilitados %}
+        <div class="content-area" id="quadro-produtos">
+            <div class="content-header">
+                <h2>Produto</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-produto"></tbody>
+            </table>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- QUADRO VEÍCULOS - Mostrar apenas se escopo VEICULOS estiver habilitado -->
+        {% if 'VEICULOS' in escopos_habilitados %}
+        <div class="content-area" id="quadro-veiculos">
+            <div class="content-header">
+                <h2>Veículos</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-veiculos"></tbody>
+            </table>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Quadro FINANCEIRO - Mostrar apenas se escopo FINANCEIRO estiver habilitado -->
+        {% if 'FINANCEIRO' in escopos_habilitados %}
+        <div class="content-area" id="quadro-financeiro">
+            <div class="content-header">
+                <h2>Financeiro</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-financeiro"></tbody>
+            </table>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Quadro CONTABILIDADE - Mostrar apenas se escopo CONTABILIDADE estiver habilitado -->
+        {% if 'CONTABILIDADE' in escopos_habilitados %}
+        <div class="content-area" id="quadro-contabilidade">
+            <div class="content-header">
+                <h2>Contabilidade</h2>
+                <p class="content-description">Status de Conclusão das Tabelas</p>
+            </div>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>TABELA</th>
+                        <th>STATUS</th>
+                        <th>QTD</th>
+                        <th>QTD_PENDENTE</th>
+                        <th>PERCENTUAL DE CONCLUSÃO</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-contabilidade"></tbody>
+            </table>
+            <!-- BOTÃO VOLTAR AO TOPO -->
+            <button class="back-to-top" onclick="scrollToTop()">
+                <i class="fas fa-arrow-up"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Mensagem se nenhum escopo estiver habilitado -->
+        {% if not escopos_habilitados %}
+        <div class="content-area">
+            <div class="content-header">
+                <h2>Nenhum Escopo Configurado</h2>
+                <p class="content-description">Este projeto não possui escopos habilitados.</p>
+            </div>
+            <div class="no-scope-message">
+                <p>Entre em contato com o administrador para configurar os escopos deste projeto.</p>
+                {% if usuario.adm == 1 %}
+                <a href="{{ url_for('escopos.gerenciar_escopos') }}" class="btn btn-primary">
+                    <i class="fas fa-cog"></i> Gerenciar Escopos
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div> <!-- FIM DA MAIN-CONTENT -->
+
+    <!-- Script para passar dados do Python para JavaScript -->
+    <script>
+        // Passar dados do Python para JavaScript
+        window.cond_pag = {{ cond_pag | tojson | safe }};
+        window.escol = {{ escol | tojson | safe }};
+        window.estado = {{ estado | tojson | safe }};
+        window.estadocivil = {{ estadocivil | tojson | safe }};
+        window.municipio = {{ municipio | tojson | safe }};
+        window.pais = {{ pais | tojson | safe }};
+        window.profissao = {{ profissao | tojson | safe }};
+        window.segmentomercado = {{ segmentomercado | tojson | safe }};
+        window.tipologradouro = {{ tipologradouro | tojson | safe }};
+        window.departamento = {{ departamento | tojson | safe }};
+        window.estoque = {{ estoque | tojson | safe }};
+        window.naturezaoperacao = {{ naturezaoperacao | tojson | safe }};
+        window.equipe = {{ equipe | tojson | safe }};
+        window.usuario_depara = {{ usuario_depara | tojson | safe }};
+        window.clasmontadora = {{ clasmontadora | tojson | safe }};
+        window.grupolucratividade = {{ grupolucratividade | tojson | safe }};
+        window.grupoproduto = {{ grupoproduto | tojson | safe }};
+        window.pessoacodfabricante = {{ pessoacodfabricante | tojson | safe }};
+        window.procedencia = {{ procedencia | tojson | safe }};
+        window.tabelapreco = {{ tabelapreco | tojson | safe }};
+        window.tipoproduto = {{ tipoproduto | tojson | safe }};
+        window.unidade = {{ unidade | tojson | safe }};
+        window.combustivel = {{ combustivel | tojson | safe }};
+        window.corexterna = {{ corexterna | tojson | safe }};
+        window.corinterna = {{ corinterna | tojson | safe }};
+        window.marca = {{ marca | tojson | safe }};
+        window.modeloveiculo = {{ modeloveiculo | tojson | safe }};
+        window.opcional = {{ opcional | tojson | safe }};
+        window.setorservico = {{ setorservico | tojson | safe }};
+        window.tipoos = {{ tipoos | tojson | safe }};
+        window.tiposervico = {{ tiposervico | tojson | safe }};
+        window.tmo = {{ tmo | tojson | safe }};
+        window.veiculoano = {{ veiculoano | tojson | safe }};
+        window.agentecobrador = {{ agentecobrador | tojson | safe }};
+        window.banco = {{ banco | tojson | safe }};
+        window.contagerencial = {{ contagerencial | tojson | safe }};
+        window.tipocobranca = {{ tipocobranca | tojson | safe }};
+        window.tipocreditodebito = {{ tipocreditodebito | tojson | safe }};
+        window.tipodocumento = {{ tipodocumento | tojson | safe }};
+        window.tipoficharazao = {{ tipoficharazao | tojson | safe }};
+        window.tipotitulo = {{ tipotitulo | tojson | safe }};
+        window.centroresultado = {{ centroresultado | tojson | safe }};
+        window.historicopadrao = {{ historicopadrao | tojson | safe }};
+        window.planoconta = {{ planoconta | tojson | safe }};
+        window.subconta = {{ subconta | tojson | safe }};
+        window.tipolote = {{ tipolote | tojson | safe }};
+        window.tiposubconta = {{ tiposubconta | tojson | safe }};
+        window.progresso_total = {{ progresso_total | tojson | safe }};
+        window.escopos_habilitados = {{ escopos_habilitados | tojson | safe }};
+        window.progresso_categorias = {{ progresso_categorias | tojson | safe }};
+    </script>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script>
+    // DEBUG: Verificar se as variáveis estão sendo carregadas
+    console.log("=== DEBUG DASHBOARD ===");
+    console.log("cond_pag:", window.cond_pag);
+    console.log("escol:", window.escol);
+    console.log("estado:", window.estado);
+    console.log("projeto_selecionado:", {{ projeto_selecionado | tojson | safe }});
+    console.log("progresso_total:", window.progresso_total);
+    console.log("escopos_habilitados:", window.escopos_habilitados);
+    console.log("progresso_categorias:", window.progresso_categorias);
+
+    // Função para scroll suave ao clicar nos links
+    document.addEventListener('DOMContentLoaded', function() {
+        // Adicionar smooth scroll para os links das categorias
+        document.querySelectorAll('.categoria-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                
+                if (targetElement) {
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    });
+    
+    // Função para scroll suave até o topo
+    function scrollToTop() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    }
+    </script>
+</body>
+</html>

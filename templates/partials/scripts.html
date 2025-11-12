@@ -1,0 +1,22 @@
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script>
+    // Inicialização quando o DOM estiver carregado
+    document.addEventListener('DOMContentLoaded', function() {
+        inicializarDashboard(
+            {{ cond_pag|tojson }},
+            {{ escol|tojson }},
+            {{ estado|tojson }},
+            {{ estadocivil|tojson }},
+            {{ municipio|tojson }},
+            {{ pais|tojson }},
+            {{ profissao|tojson }},
+            {{ segmentomercado|tojson }},
+            {{ tipologradouro|tojson }},
+            {{ departamento|tojson }},
+            {{ estoque|tojson }},
+            {{ naturezaoperacao|tojson }},
+            {{ equipe|tojson }},
+            {{ usuario_depara|tojson }}
+        );
+    });
+</script>

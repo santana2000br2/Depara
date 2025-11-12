@@ -1,0 +1,52 @@
+# ====== AMBIENTE VIRTUAL ======
+venv/
+ENV/
+env/
+*.pyc
+__pycache__/
+
+# ====== ARQUIVOS DE CONFIGURAÇÃO LOCAL ======
+.env
+config_windows.py
+
+# ====== LOGS ======
+logs/
+*.log
+
+# ====== BACKUPS ======
+*.bak
+*.sql
+
+# ====== ARQUIVOS DO WINDOWS E EDITORES ======
+Thumbs.db
+.vscode/
+
+# ====== ARQUIVOS TEMPORÁRIOS ======
+*.tmp
+*.temp
+
+# ====== BUILD, DIST E GERADOS ======
+build/
+dist/
+*.egg-info/
+
+# ====== COMPILAÇÕES DO FLASK E SPHINX ======
+source/_build/
+source/_static/
+source/_templates/
+
+# ====== ARQUIVOS DE DEPLOY DO IIS (OPCIONAL) ======
+web.config
+
+# ====== ARQUIVOS DE TESTE OU AUXILIARES ======
+teste.py
+corrigir_templates.bat
+corrigir_final.py
+limpeza.py
+monitor_windows.ps1
+setup_windows.bat
+run.bat
+run_flask.py
+deploy_windows.ps1
+backup_windows.ps1
+

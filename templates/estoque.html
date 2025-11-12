@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque - DePara</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .tooltip { position: relative; display: inline-block; }
+        .tooltip .tooltiptext {
+            visibility: hidden; width: 300px; background-color: #ff4444; color: white;
+            text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1;
+            bottom: 125%; left: 50%; margin-left: -150px; opacity: 0; transition: opacity 0.3s; font-size:12px;
+        }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+        .codigo-invalido { background-color: #fed7d7 !important; border: 1px solid #feb2b2; }
+        .codigo-valido { background-color: #d1fae5 !important; border: 1px solid #a7f3d0; }
+        .coluna-origem { background-color: #f0f9ff !important; border-left: 3px solid #0ea5e9 !important; }
+        .editable-cell:hover { background-color: #f0f9ff !important; box-shadow: inset 0 0 0 2px #0ea5e9; }
+        .input-numerico { font-family: 'Courier New', monospace; font-weight: bold; }
+        .celula-editando { background-color: #fef3c7 !important; box-shadow: inset 0 0 0 2px #f59e0b; }
+        #btnSalvarTudo:disabled { background-color: #9ca3af !important; color: #6b7280 !important; cursor: not-allowed; }
+        .legenda-item { display:inline-flex; align-items:center; gap:8px; margin-right:16px; }
+        .legenda-cor { width:18px; height:18px; border:1px solid #ccc; display:inline-block; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+    <header class="mb-6 text-center">
+        <h1 class="text-3xl font-bold text-gray-800">Estoque - DePara</h1>
+        <p class="text-red-600 mt-2 font-semibold flex items-center justify-center gap-2">
+            <i class="fas fa-exclamation-circle"></i> Clique Duas vezes para editar
+        </p>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="w-full max-w-6xl mb-4">
+                {% for category, message in messages %}
+                    <div class="p-4 rounded-md {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="w-full max-w-6xl mb-4 p-4 bg-white rounded-lg shadow-md">
+        <h3 class="font-bold mb-2">Legenda:</h3>
+        <div class="flex flex-wrap gap-4">
+            <div class="legenda-item"><div class="legenda-cor bg-yellow-200"></div><span>Código S/DePara</span></div>
+            <div class="legenda-item"><div class="legenda-cor bg-red-200"></div><span>Código Inválido (não encontrado na base WF)</span></div>
+            <div class="legenda-item"><div class="legenda-cor bg-green-200"></div><span>Código Válido</span></div>
+        </div>
+    </div>
+
+    <div class="flex justify-between items-center w-full max-w-6xl mb-4 flex-wrap gap-4">
+        <div class="flex gap-4 items-center flex-wrap">
+            <button id="btnSalvarTudo" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2" disabled>
+                <i class="fas fa-save"></i> Salvar
+                <span id="contadorAlteracoes" class="bg-white text-green-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold ml-2">0</span>
+            </button>
+
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" id="filtroProblemas" class="rounded border-gray-300">
+                <span class="text-sm font-medium">Mostrar apenas S/DePara e Códigos Inválidos</span>
+            </label>
+
+            <button id="btnExportWF" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2">
+                <i class="fas fa-table"></i> Tabela do WF
+            </button>
+        </div>
+
+        <div class="flex gap-4 flex-wrap">
+            <button id="btnExport" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2">
+                <i class="fas fa-file-excel"></i> Exportar Excel
+            </button>
+
+            <button id="btnImport" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2">
+                <i class="fas fa-file-import"></i> Importar Excel
+            </button>
+
+            <a href="{{ url_for('dashboard.dashboard') }}" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2">
+                <i class="fas fa-arrow-left"></i> Voltar ao Dashboard
+            </a>
+
+            <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;">
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded-lg shadow-lg flex items-center gap-4">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span class="text-gray-700">Processando...</span>
+        </div>
+    </div>
+
+    <div class="w-full max-w-6xl overflow-x-auto bg-white shadow-md rounded-lg">
+        {% if registros %}
+        <table class="min-w-full divide-y divide-gray-200" id="tabelaEstoque">
+            <thead class="bg-blue-600 text-white">
+                <tr>
+                    {% for coluna in colunas %}
+                        {% if coluna == 'id' %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase coluna-origem">ID</th>
+                        {% elif coluna == 'est_cd' %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase coluna-origem">Codigo de Origem</th>
+                        {% elif coluna == 'est_ds' %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase coluna-origem">Descrição de origem</th>
+                        {% else %}
+                            <th class="px-4 py-2 text-left text-sm font-medium uppercase">{{ coluna }}</th>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200" id="tbodyRegistros">
+                {% for registro in registros %}
+                <tr class="hover:bg-blue-50 registro-linha"
+                    data-id="{{ registro.id }}"
+                    data-codigo-wf="{{ registro.Estoque_Codigo or '' }}"
+                    data-descricao-wf="{{ registro.Estoque_Descricao or '' }}">
+                    {% for coluna in colunas %}
+                        {% set valor = registro[coluna] %}
+                        {% set is_codigo_invalido = coluna == 'Estoque_Codigo' and valor and valor != 'S/DePara' and valor|string not in codigos_wf %}
+                        {% set is_codigo_valido = coluna == 'Estoque_Codigo' and valor and valor != 'S/DePara' and valor|string in codigos_wf %}
+                        {% set is_coluna_origem = coluna in ['id', 'est_cd', 'est_ds'] %}
+                        {% set is_coluna_codigo_editavel = coluna.endswith('_Codigo') and not is_coluna_origem %}
+                        <td class="px-4 py-2 text-gray-700 text-sm
+                                   {% if is_coluna_origem %} coluna-origem {% endif %}
+                                   {% if coluna == 'Estoque_Codigo' and valor == 'S/DePara' %} bg-yellow-200 {% endif %}
+                                   {% if is_codigo_invalido %} codigo-invalido tooltip {% endif %}
+                                   {% if is_codigo_valido %} codigo-valido {% endif %}
+                                   {% if is_coluna_codigo_editavel %} editable-cell cursor-pointer {% endif %}"
+                            {% if is_coluna_codigo_editavel %} data-field="{{ coluna }}" data-original-value="{{ valor or '' }}" {% endif %}
+                            {% if is_codigo_invalido %} data-tooltip="Verifique se esse código existe na sua base Workflow de Produção" {% endif %}>
+                            {% if is_coluna_codigo_editavel %}
+                                <span class="editable-content">{{ valor or '' }}</span>
+                            {% else %}
+                                {{ valor or '' }}
+                            {% endif %}
+                            {% if is_codigo_invalido %}
+                                <span class="tooltiptext"><i class="fas fa-exclamation-triangle mr-1"></i> Verifique se esse código existe na sua base Workflow de Produção</span>
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-8 text-center"><p class="text-gray-500">Nenhum registro encontrado.</p></div>
+        {% endif %}
+    </div>
+
+    <script>
+        let alteracoesPendentes = new Map();
+        let filtroAtivo = false;
+        let celulaEditando = null;
+        const codigos_wf = new Set({{ codigos_wf | tojson | safe }});
+
+        document.getElementById('btnExport').addEventListener('click', function() {
+            if (filtroAtivo) exportarRegistrosFiltrados();
+            else window.location.href = "{{ url_for('estoque.exportar_estoque') }}";
+        });
+
+        document.getElementById('btnExportWF').addEventListener('click', function() {
+            window.location.href = "{{ url_for('estoque.export_wf') }}";
+        });
+
+        document.getElementById('btnImport').addEventListener('click', function() {
+            document.getElementById('fileInput').click();
+        });
+
+        document.getElementById('filtroProblemas').addEventListener('change', function() {
+            filtroAtivo = this.checked;
+            aplicarFiltro();
+            const btnExport = document.getElementById('btnExport');
+            if (filtroAtivo) btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Filtrados';
+            else btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
+        });
+
+        document.getElementById('btnSalvarTudo').addEventListener('click', salvarTodasAlteracoes);
+
+        document.getElementById('fileInput').addEventListener('change', function() {
+            const file = this.files[0];
+            if(!file) return;
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            const formData = new FormData(); formData.append('file', file);
+            fetch("{{ url_for('estoque.importar_estoque') }}", { method: 'POST', body: formData })
+            .then(res => res.json()).then(data => {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                if(data.success) { mostrarMensagem(data.message,'success'); setTimeout(()=>location.reload(),1200); }
+                else mostrarMensagem('Erro: '+data.message,'error');
+            }).catch(err => { document.getElementById('loadingOverlay').classList.add('hidden'); mostrarMensagem('Erro: '+err,'error'); })
+            .finally(()=>{ this.value=''; });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabela = document.getElementById('tabelaEstoque');
+            if (!tabela) return;
+            tabela.addEventListener('dblclick', function(e) {
+                const cell = e.target.closest('td');
+                if (cell && cell.classList.contains('editable-cell')) {
+                    if (celulaEditando && celulaEditando !== cell) cancelarEdicao(celulaEditando);
+                    iniciarEdicao(cell);
+                }
+            });
+            atualizarContadorAlteracoes();
+        });
+
+        function aplicarFiltro() {
+            const linhas = document.querySelectorAll('.registro-linha');
+            linhas.forEach(linha => {
+                const codigoWf = linha.getAttribute('data-codigo-wf');
+                const isSDePara = codigoWf === 'S/DePara';
+                const isInvalido = linha.querySelector('.codigo-invalido') !== null;
+                if (filtroAtivo) linha.style.display = (isSDePara || isInvalido) ? '' : 'none'; else linha.style.display = '';
+            });
+        }
+
+        function exportarRegistrosFiltrados() {
+            const registrosFiltrados = [];
+            const linhasVisiveis = document.querySelectorAll('.registro-linha:not([style*="display: none"])');
+            const headers = Array.from(document.querySelectorAll('thead th')).map(th => th.textContent.trim());
+            linhasVisiveis.forEach(linha => {
+                const registro = {}; const celulas = linha.querySelectorAll('td');
+                celulas.forEach((celula, index) => {
+                    const header = headers[index];
+                    const conteudoEditavel = celula.querySelector('.editable-content');
+                    let valor = conteudoEditavel ? conteudoEditavel.textContent.trim() : celula.textContent.trim();
+                    registro[header] = valor;
+                });
+                registrosFiltrados.push(registro);
+            });
+            if (registrosFiltrados.length === 0) { mostrarMensagem('Nenhum registro para exportar com o filtro atual.', 'warning'); return; }
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            fetch("{{ url_for('estoque.exportar_estoque_filtrados') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ registros: registrosFiltrados, headers: headers })
+            })
+            .then(response => { if (!response.ok) throw new Error('Erro na exportação'); return response.blob(); })
+            .then(blob => {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'Estoque_Filtrado.xlsx';
+                document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
+                mostrarMensagem(`Exportados ${registrosFiltrados.length} registros filtrados com formatação.`, 'success');
+            })
+            .catch(error => {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                console.error('Erro na exportação:', error);
+                exportarRegistrosFiltradosSimples(registrosFiltrados, headers);
+            });
+        }
+
+        function exportarRegistrosFiltradosSimples(registrosFiltrados, headers) {
+            try {
+                const worksheet = XLSX.utils.json_to_sheet(registrosFiltrados);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Estoque_Filtrado");
+                XLSX.writeFile(workbook, "Estoque_Filtrado_Simples.xlsx");
+                mostrarMensagem(`Exportados ${registrosFiltrados.length} registros filtrados (sem formatação).`, 'success');
+            } catch (error) {
+                mostrarMensagem('Erro ao exportar registros filtrados: ' + error, 'error');
+            }
+        }
+
+        function iniciarEdicao(cell) {
+            const row = cell.closest('tr');
+            const field = cell.getAttribute('data-field');
+            const originalValue = cell.getAttribute('data-original-value') || cell.textContent.trim();
+            const input = document.createElement('input'); input.type = 'text'; input.value = originalValue;
+            input.className = 'w-full px-2 py-1 border border-blue-500 rounded input-numerico';
+            if (field === 'Estoque_Codigo') input.placeholder = 'Apenas números ou "S/DePara" - Campo obrigatório';
+            if (field === 'Estoque_Codigo') {
+                input.addEventListener('input', function(e) {
+                    let value = e.target.value;
+                    if (value !== 'S/DePara') { value = value.replace(/[^\d]/g, ''); e.target.value = value; }
+                    setTimeout(()=> {
+                        const currentValue = e.target.value.trim();
+                        if (currentValue === '') { e.target.classList.add('border-red-500'); e.target.classList.remove('border-green-500'); }
+                        else if (currentValue === 'S/DePara' || (currentValue && codigos_wf.has(currentValue))) { e.target.classList.remove('border-red-500'); e.target.classList.add('border-green-500'); }
+                        else { e.target.classList.add('border-red-500'); e.target.classList.remove('border-green-500'); }
+                    }, 100);
+                });
+                setTimeout(()=> {
+                    const currentValue = input.value.trim();
+                    if (currentValue === '') input.classList.add('border-red-500');
+                    else if (currentValue === 'S/DePara' || (currentValue && codigos_wf.has(currentValue))) input.classList.add('border-green-500');
+                    else input.classList.add('border-red-500');
+                }, 100);
+            }
+            input.addEventListener('keydown', function(e) { if (e.key === 'Enter') confirmarEdicao(cell); else if (e.key === 'Escape') cancelarEdicao(cell);});
+            input.addEventListener('blur', function(){ confirmarEdicao(cell); });
+            const conteudo = cell.querySelector('.editable-content');
+            if (conteudo) { conteudo.style.display = 'none'; cell.appendChild(input); } else { const novo = document.createElement('span'); novo.className='editable-content'; cell.innerHTML=''; cell.appendChild(novo); cell.appendChild(input); }
+            cell.classList.add('celula-editando'); input.focus(); input.select(); celulaEditando = cell;
+        }
+
+        function confirmarEdicao(cell) {
+            const row = cell.closest('tr'); const field = cell.getAttribute('data-field'); const input = cell.querySelector('input');
+            if (!input) { console.error('Input não encontrado'); return; }
+            const newValue = input.value.trim(); const originalValue = cell.getAttribute('data-original-value') || ''; const recordId = row.getAttribute('data-id');
+            if (!recordId) { console.error('ID do registro não encontrado'); return; }
+            if (field === 'Estoque_Codigo') {
+                if (newValue === '') { mostrarMensagem('Código WF não pode estar vazio. Use números ou "S/DePara".','error'); return; }
+                if (newValue !== 'S/DePara' && !/^\d+$/.test(newValue)) { mostrarMensagem('Código WF deve conter apenas números ou "S/DePara"','error'); return; }
+            }
+            let conteudo = cell.querySelector('.editable-content');
+            if (!conteudo) { conteudo = document.createElement('span'); conteudo.className='editable-content'; cell.innerHTML=''; cell.appendChild(conteudo); } else { const inp = cell.querySelector('input'); if (inp) cell.removeChild(inp); conteudo.style.display=''; }
+            if (newValue === originalValue) { conteudo.textContent = newValue; finalizarEdicao(cell); return; }
+            const chave = `${recordId}-${field}`;
+            alteracoesPendentes.set(chave, { id: recordId, field: field, value: newValue, originalValue: originalValue, cell: cell, row: row });
+            conteudo.textContent = newValue; cell.setAttribute('data-original-value', newValue);
+            if (field === 'Estoque_Codigo') { atualizarEstadoCelulaCodigo(cell, newValue); row.setAttribute('data-codigo-wf', newValue); }
+            cell.classList.remove('celula-editando'); cell.classList.add('bg-yellow-100'); atualizarContadorAlteracoes(); mostrarMensagem('Alteração registrada. Clique em "Salvar" para confirmar.','info'); finalizarEdicao(cell);
+        }
+
+        function cancelarEdicao(cell) {
+            const originalValue = cell.getAttribute('data-original-value') || '';
+            let conteudo = cell.querySelector('.editable-content');
+            if (!conteudo) { conteudo = document.createElement('span'); conteudo.className='editable-content'; cell.innerHTML=''; cell.appendChild(conteudo); }
+            else { const input = cell.querySelector('input'); if (input) cell.removeChild(input); conteudo.style.display=''; }
+            conteudo.textContent = originalValue; finalizarEdicao(cell); atualizarContadorAlteracoes();
+        }
+
+        function finalizarEdicao(cell) {
+            cell.classList.remove('celula-editando'); const input = cell.querySelector('input'); if (input) try{ input.remove(); } catch(e) {}
+            celulaEditando = null;
+        }
+
+        function atualizarEstadoCelulaCodigo(cell, value) {
+            cell.classList.remove('codigo-invalido','codigo-valido','bg-yellow-200');
+            if (!value || value === '') {}
+            else if (value === 'S/DePara') cell.classList.add('bg-yellow-200');
+            else if (codigos_wf.has(value)) cell.classList.add('codigo-valido');
+            else cell.classList.add('codigo-invalido');
+        }
+
+        function atualizarContadorAlteracoes() {
+            const contador = alteracoesPendentes.size;
+            document.getElementById('contadorAlteracoes').textContent = contador;
+            const btnSalvar = document.getElementById('btnSalvarTudo');
+            btnSalvar.disabled = contador === 0;
+        }
+
+        function salvarTodasAlteracoes() {
+            if (alteracoesPendentes.size === 0) { mostrarMensagem('Nenhuma alteração pendente.','info'); return; }
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            const payload = []; alteracoesPendentes.forEach((v,k)=> payload.push({ id: v.id, field: v.field, value: v.value }));
+            const promises = payload.map(item => fetch("{{ url_for('estoque.update_registro') }}", { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(item) }).then(res=>res.json()));
+            Promise.all(promises).then(results => {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                let sucesso = 0, falha = 0;
+                results.forEach(r => { if (r && r.success) sucesso++; else falha++; });
+                if (falha === 0) { mostrarMensagem(`Todas as alterações salvas com sucesso (${sucesso}).`,'success'); alteracoesPendentes.clear(); atualizarContadorAlteracoes(); setTimeout(()=>location.reload(),800); }
+                else { mostrarMensagem(`Salvas ${sucesso} alterações. ${falha} falharam. Verifique o log.`,'warning'); }
+            }).catch(err => { document.getElementById('loadingOverlay').classList.add('hidden'); mostrarMensagem('Erro ao salvar alterações: '+err,'error'); });
+        }
+
+        function mostrarMensagem(msg,tipo) {
+            const colors = { success: 'bg-green-100 text-green-700', error: 'bg-red-100 text-red-700', warning: 'bg-yellow-100 text-yellow-700', info: 'bg-blue-100 text-blue-700' };
+            const container = document.createElement('div'); container.className = `fixed top-4 right-4 p-3 rounded shadow ${colors[tipo]||colors.info} z-60`; container.textContent = msg;
+            document.body.appendChild(container); setTimeout(()=>container.remove(),3500);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,460 @@
+
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DE x PARA - Envio de Arquivo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <style>
+        .upload-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .upload-card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .file-input-wrapper {
+            margin: 20px 0;
+        }
+        
+        .file-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #f8f9fa;
+        }
+        
+        .btn-process {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+            width: 100%;
+            margin-top: 15px;
+        }
+        
+        .btn-process:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-process:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .btn-export {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-left: 10px;
+        }
+        
+        .btn-export:hover {
+            background-color: #218838;
+            color: white;
+            text-decoration: none;
+        }
+        
+        .results-container {
+            margin-top: 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 4px solid #007bff;
+        }
+        
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .stat-label {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+        
+        .table-container {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .compact-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        
+        .compact-table th,
+        .compact-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .compact-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .error-row {
+            background: #f8d7da;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .info-message {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+        
+        .process-info {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        
+        .process-info-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0 10px 0;
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        
+        .no-results i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    {% include 'partials/sidebar.html' %}
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Header -->
+        {% include 'partials/header.html' %}
+        
+        <!-- Content Area -->
+        <div class="content-area">
+            <div class="content-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2>Importação de Arquivos</h2>
+                    <p class="content-description">Processe e valide arquivos de dados</p>
+                </div>
+                <a href="{{ url_for('dashboard.dashboard') }}" class="btn-voltar" style="background-color: #6c757d; color: white; padding: 8px 15px; border-radius: 4px; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Dashboard
+                </a>
+            </div>
+
+            <div class="upload-container">
+                <!-- Card de Upload -->
+                <div class="upload-card">
+                    <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-file-import" style="color: #007bff;"></i>
+                        Selecione o arquivo para importar
+                    </h3>
+                    
+                    <form method="post" enctype="multipart/form-data" id="upload-form">
+                        <div class="file-input-wrapper">
+                            <label for="arquivo" style="display: block; margin-bottom: 8px; font-weight: 500;">Arquivo:</label>
+                            <input type="file" name="arquivo" id="arquivo" accept=".csv,.txt" class="file-input" required>
+                        </div>
+                        
+                        <div style="background: #e9f7fe; padding: 15px; border-radius: 4px; margin: 15px 0;">
+                            <h4 style="margin: 0 0 10px 0; font-size: 1em; color: #007bff;">
+                                <i class="fas fa-info-circle"></i> Informações do arquivo
+                            </h4>
+                            <div style="font-size: 0.9em; color: #555;">
+                                <div><strong>Formatos suportados:</strong> CSV, TXT</div>
+                                <div><strong>Separador:</strong> § (pipeline)</div>
+                                <div><strong>Encoding:</strong> Latin-1</div>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-process" id="process-button" disabled>
+                            <i class="fas fa-cog"></i> Processar Arquivo
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Mensagens Flash -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div style="margin-top: 20px;">
+                            {% for category, message in messages %}
+                                {% if category == 'error' %}
+                                    <div class="error-message">
+                                        <i class="fas fa-times-circle"></i> {{ message }}
+                                    </div>
+                                {% elif category == 'success' %}
+                                    <div class="success-message">
+                                        <i class="fas fa-check-circle"></i> {{ message }}
+                                    </div>
+                                {% elif category == 'warning' %}
+                                    <div class="info-message" style="background: #fff3cd; color: #856404;">
+                                        <i class="fas fa-exclamation-triangle"></i> {{ message }}
+                                    </div>
+                                {% else %}
+                                    <div class="info-message">
+                                        <i class="fas fa-info-circle"></i> {{ message }}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <!-- Resultados do Processamento -->
+                {% if layout %}
+                <div class="results-container">
+                    <!-- Informações do Processamento -->
+                    <div class="process-info">
+                        <div class="process-info-item">
+                            <i class="fas fa-tag" style="color: #007bff;"></i>
+                            <strong>Layout:</strong> {{ layout }}
+                        </div>
+                        {% if total_erros is defined %}
+                        <div class="process-info-item">
+                            <i class="fas fa-exclamation-triangle" style="color: {% if total_erros == 0 %}#28a745{% else %}#dc3545{% endif %};"></i>
+                            <strong>Erros:</strong> {{ total_erros }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Estatísticas -->
+                    {% if dados_processados or total_erros > 0 %}
+                    <div class="stats-grid">
+                        {% if dados_processados %}
+                        <div class="stat-card">
+                            <div class="stat-number">
+                                {{ dados_processados.split('<tbody>')[1].split('</tbody>')[0].count('<tr>') if dados_processados else 0 }}
+                            </div>
+                            <div class="stat-label">Registros Processados</div>
+                        </div>
+                        {% endif %}
+                        <div class="stat-card">
+                            <div class="stat-number">{{ total_erros or 0 }}</div>
+                            <div class="stat-label">Erros Encontrados</div>
+                        </div>
+                        {% if dados_processados %}
+                        <div class="stat-card">
+                            <div class="stat-number">
+                                {% set total_registros = dados_processados.split('<tbody>')[1].split('</tbody>')[0].count('<tr>') if dados_processados else 0 %}
+                                {% if total_registros > 0 %}
+                                    {{ ((total_registros - (total_erros or 0)) / total_registros * 100)|round(1) }}%
+                                {% else %}
+                                    100%
+                                {% endif %}
+                            </div>
+                            <div class="stat-label">Taxa de Sucesso</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Tabela de Erros -->
+                    {% if erros_processados and not df_errors.empty and export_id %}
+                    <div class="table-container">
+                        <div class="section-header">
+                            <h4 style="margin: 0; color: #dc3545;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Erros de Validação ({{ total_erros }})
+                            </h4>
+                            <a href="{{ url_for('envio_arquivo.exportar_erros') }}?export_id={{ export_id }}" class="btn-export">
+                                <i class="fas fa-file-excel"></i> Exportar para Excel
+                            </a>
+                        </div>
+                        <table class="compact-table">
+                            <thead>
+                                <tr>
+                                    <th>Linha</th>
+                                    <th>Coluna</th>
+                                    <th>Erro</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for index, row in df_errors.iterrows() %}
+                                <tr class="error-row">
+                                    <td><strong>{{ row['Linha'] }}</strong></td>
+                                    <td><code>{{ row['Coluna'] }}</code></td>
+                                    <td>{{ row['Erro'] }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% elif layout and total_erros == 0 %}
+                    <div class="no-results">
+                        <i class="fas fa-check-circle" style="color: #28a745;"></i>
+                        <h4>Nenhum erro encontrado!</h4>
+                        <p>O arquivo foi processado com sucesso.</p>
+                    </div>
+                    {% endif %}
+
+                    <!-- Tabela de Dados Processados -->
+                    {% if dados_processados and total_erros == 0 %}
+                    <div class="table-container">
+                        <div class="section-header">
+                            <h4 style="margin: 0; color: #28a745;">
+                                <i class="fas fa-check-circle"></i>
+                                Dados Processados com Sucesso
+                            </h4>
+                        </div>
+                        <div class="table-responsive">
+                            {{ dados_processados | safe }}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Informações sobre Layouts -->
+            <details style="margin-top: 30px; max-width: 800px; margin-left: auto; margin-right: auto;">
+                <summary style="cursor: pointer; padding: 10px; background: #f8f9fa; border-radius: 4px; font-weight: 500;">
+                    <i class="fas fa-chevron-down"></i> Layouts Suportados
+                </summary>
+                <div style="margin-top: 10px;">
+                    <table class="compact-table">
+                        <thead>
+                            <tr>
+                                <th>Layout</th>
+                                <th>Descrição</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><strong>Forn_cli</strong></td><td>Cadastro de Fornecedores/Clientes</td></tr>
+                            <tr><td><strong>Forn_cli_Endereco</strong></td><td>Endereços de Fornecedores/Clientes</td></tr>
+                            <tr><td><strong>Forn_cli_Documento</strong></td><td>Documentos de Fornecedores/Clientes</td></tr>
+                            <tr><td><strong>Forn_cli_Enquadramento</strong></td><td>Enquadramento Fiscal</td></tr>
+                            <tr><td><strong>Forn_cli_Telefone</strong></td><td>Telefones de Fornecedores/Clientes</td></tr>
+                            <tr><td><strong>Forn_cli_Contato</strong></td><td>Contatos de Fornecedores/Clientes</td></tr>
+                            <tr><td><strong>Produto</strong></td><td>Cadastro de Produtos</td></tr>
+                            <tr><td><strong>Veiculo</strong></td><td>Cadastro de Veículos</td></tr>
+                            <tr><td><strong>ProdutoEstoque</strong></td><td>Estoque de Produtos</td></tr>
+                            <tr><td><strong>Financeiro</strong></td><td>Movimentações Financeiras</td></tr>
+                            <tr><td><strong>Adiantamento</strong></td><td>Adiantamentos</td></tr>
+                            <tr><td><strong>Fseg_Cab</strong></td><td>Cabeçalho de Ordem de Serviço</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <script>
+        // Habilitar botão quando arquivo for selecionado
+        document.getElementById('arquivo').addEventListener('change', function(e) {
+            document.getElementById('process-button').disabled = !e.target.files[0];
+        });
+
+        // Inicializar sidebar
+        document.addEventListener('DOMContentLoaded', function() {
+            // Toggle sidebar
+            const toggleSidebar = document.getElementById('toggleSidebar');
+            if (toggleSidebar) {
+                toggleSidebar.addEventListener('click', function() {
+                    const sidebar = document.getElementById('sidebar');
+                    sidebar.classList.toggle('collapsed');
+                    
+                    this.innerHTML = sidebar.classList.contains('collapsed')
+                        ? '<i class="fas fa-chevron-right"></i><span>Expandir Menu</span>'
+                        : '<i class="fas fa-chevron-left"></i><span>Recolher Menu</span>';
+                    
+                    localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+                });
+            }
+
+            // Toggle sidebar mobile
+            const toggleSidebarMobile = document.getElementById('toggleSidebarMobile');
+            if (toggleSidebarMobile) {
+                toggleSidebarMobile.addEventListener('click', function() {
+                    document.getElementById('sidebar').classList.toggle('mobile-open');
+                });
+            }
+
+            // Restaurar estado do sidebar
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                const sidebar = document.getElementById('sidebar');
+                if (sidebar) {
+                    sidebar.classList.add('collapsed');
+                    const toggleButton = document.getElementById('toggleSidebar');
+                    if (toggleButton) {
+                        toggleButton.innerHTML = '<i class="fas fa-chevron-right"></i><span>Expandir Menu</span>';
+                    }
+                }
+            }
+        });
+    </script>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
