@@ -1,0 +1,73 @@
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h2>DE X PARA</h2>
+        <p>Sistema de Autenticação</p>
+    </div>
+    
+    <ul class="sidebar-menu">
+        <li>
+            <a href="{{ url_for('dashboard.dashboard') }}" {% if request.endpoint == 'dashboard.dashboard' %}class="active"{% endif %}>
+                <i class="fas fa-home"></i> <span>Dashboard</span>
+            </a>
+        </li>
+        
+        <!-- MENU DE IMPORTAÇÃO - SISTEMA NOVO - SEMPRE EXPANDIDO -->
+        <!-- No partials/sidebar.html, atualize o menu de importação -->
+<li class="menu-with-submenu active">
+    <a href="#" class="{% if 'importacao' in request.endpoint or 'layout' in request.endpoint %}active{% endif %}">
+        <i class="fas fa-file-import"></i> <span>Importação (Novo)</span>
+        <i class="fas fa-chevron-down dropdown-arrow"></i>
+    </a>
+    <ul class="submenu" style="display: block; max-height: none;">
+        <!-- Gerenciar Layouts - Apenas ADMs -->
+        {% if usuario and usuario.adm == 1 %}
+        <li>
+            <a href="{{ url_for('layout.listar_layouts') }}" {% if request.endpoint == 'layout.listar_layouts' %}class="active"{% endif %}>
+                <i class="fas fa-table"></i> <span>Gerenciar Layouts</span>
+            </a>
+        </li>
+        {% endif %}
+        
+        <!-- Enviar Arquivo - Para todos os usuários -->
+        <li>
+            <a href="{{ url_for('importacao.index') }}" {% if request.endpoint == 'importacao.index' %}class="active"{% endif %}>
+                <i class="fas fa-file-upload"></i> <span>Enviar Arquivo (Layout)</span>
+            </a>
+        </li>
+    </ul>
+</li>
+
+        
+        <!-- MENU DE IMPORTAÇÃO - SISTEMA ANTIGO -->
+        <li>
+            <a href="{{ url_for('envio_arquivo.index') }}" {% if request.endpoint == 'envio_arquivo.index' %}class="active"{% endif %}>
+                <i class="fas fa-file-import"></i> <span>Importação (Antigo)</span>
+            </a>
+        </li>
+        
+        {% if usuario and usuario.adm == 1 %}
+        <li>
+            <a href="{{ url_for('usuarios.gerenciar_usuarios') }}" {% if request.endpoint == 'usuarios.gerenciar_usuarios' %}class="active"{% endif %}>
+                <i class="fas fa-users-cog"></i> <span>Gerenciar Usuários</span>
+            </a>
+        </li>
+        {% endif %}
+        
+        <li>
+            <a href="{{ url_for('auth.trocar_projeto') }}">
+                <i class="fas fa-sync-alt"></i> <span>Trocar Projeto</span>
+            </a>
+        </li>
+        
+        <li>
+            <a href="{{ url_for('dashboard.logout') }}">
+                <i class="fas fa-sign-out-alt"></i> <span>Sair</span>
+            </a>
+        </li>
+    </ul>
+
+    <button class="toggle-sidebar" id="toggleSidebar">
+        <i class="fas fa-chevron-left"></i>
+        <span>Recolher Menu</span>
+    </button>
+</div>

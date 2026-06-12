@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Editar Layout</h1>
+    
+    <form id="layoutForm" method="POST">
+        <div class="form-section">
+            <h3>Informações do Layout</h3>
+            <div class="form-group">
+                <label for="nome_layout">Nome do Layout *</label>
+                <input type="text" id="nome_layout" name="nome_layout" class="form-control" 
+                    value="{{ layout.NomeLayout }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="descricao">Descrição</label>
+                <textarea id="descricao" name="descricao" class="form-control" rows="3">{{ layout.Descricao or '' }}</textarea>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h3>Colunas do Layout</h3>
+            <div id="colunas-container">
+                {% for coluna in colunas %}
+                <div class="coluna-item">
+                    <div class="row">
+                        <div class="col-md-1">
+                            <label>Posição</label>
+                            <input type="number" name="posicao[]" class="form-control" min="1" 
+                                   value="{{ coluna.Posicao }}" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label>Descrição *</label>
+                            <input type="text" name="descricao_coluna[]" class="form-control" 
+                                   value="{{ coluna.Descricao }}" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label>Obrigatório</label>
+                            <div class="checkbox-container">
+                                <input type="checkbox" name="obrigatorio[]" value="1" 
+                                       {% if coluna.Obrigatorio %}checked{% endif %}>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label>Validação</label>
+                            <input type="text" name="validacao[]" class="form-control" 
+                                   value="{{ coluna.Validacao or '' }}" placeholder="Valor default">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Tipo de Dado *</label>
+                            <select name="tipo_dado[]" class="form-control" required>
+                                <option value="texto" {% if coluna.TipoDado == 'texto' %}selected{% endif %}>Texto</option>
+                                <option value="numero" {% if coluna.TipoDado == 'numero' %}selected{% endif %}>Número Inteiro</option>
+                                <option value="valor" {% if coluna.TipoDado == 'valor' %}selected{% endif %}>Valor Decimal</option>
+                                <option value="data" {% if coluna.TipoDado == 'data' %}selected{% endif %}>Data</option>
+                                <option value="cpf_cnpj" {% if coluna.TipoDado == 'cpf_cnpj' %}selected{% endif %}>CPF/CNPJ</option>
+                                <option value="email" {% if coluna.TipoDado == 'email' %}selected{% endif %}>Email</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label>&nbsp;</label>
+                            <button type="button" class="btn btn-danger btn-remover-coluna">
+                                <i class="fas fa-trash"></i> Remover
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <button type="button" id="btn-adicionar-coluna" class="btn btn-secondary">
+                <i class="fas fa-plus"></i> Adicionar Coluna
+            </button>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> Atualizar Layout
+            </button>
+            <a href="{{ url_for('layout.listar_layouts') }}" class="btn btn-default">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let colunaCount = {{ colunas|length }};
+    
+    // Adicionar nova coluna
+    document.getElementById('btn-adicionar-coluna').addEventListener('click', function() {
+        colunaCount++;
+        const container = document.getElementById('colunas-container');
+        const newColuna = document.createElement('div');
+        newColuna.className = 'coluna-item';
+        newColuna.innerHTML = `
+            <div class="row">
+                <div class="col-md-1">
+                    <label>Posição</label>
+                    <input type="number" name="posicao[]" class="form-control" min="1" value="${colunaCount}" required>
+                </div>
+                <div class="col-md-3">
+                    <label>Descrição *</label>
+                    <input type="text" name="descricao_coluna[]" class="form-control" required>
+                </div>
+                <div class="col-md-2">
+                    <label>Obrigatório</label>
+                    <div class="checkbox-container">
+                        <input type="checkbox" name="obrigatorio[]" value="1">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <label>Validação</label>
+                    <input type="text" name="validacao[]" class="form-control" placeholder="Valor default">
+                </div>
+                <div class="col-md-2">
+                    <label>Tipo de Dado *</label>
+                    <select name="tipo_dado[]" class="form-control" required>
+                        <option value="texto">Texto</option>
+                        <option value="numero">Número Inteiro</option>
+                        <option value="valor">Valor Decimal</option>
+                        <option value="data">Data</option>
+                        <option value="cpf_cnpj">CPF/CNPJ</option>
+                        <option value="email">Email</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label>&nbsp;</label>
+                    <button type="button" class="btn btn-danger btn-remover-coluna">
+                        <i class="fas fa-trash"></i> Remover
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(newColuna);
+    });
+    
+    // Remover coluna
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('btn-remover-coluna')) {
+            if (document.querySelectorAll('.coluna-item').length > 1) {
+                e.target.closest('.coluna-item').remove();
+                // Reordenar posições
+                const posicoes = document.querySelectorAll('input[name="posicao[]"]');
+                posicoes.forEach((input, index) => {
+                    input.value = index + 1;
+                });
+                colunaCount = posicoes.length;
+            } else {
+                alert('O layout deve ter pelo menos uma coluna.');
+            }
+        }
+    });
+    
+    // Form submission
+    document.getElementById('layoutForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Coletar dados das colunas
+        const colunas = [];
+        const colunaItems = document.querySelectorAll('.coluna-item');
+        
+        colunaItems.forEach(item => {
+            const posicao = item.querySelector('input[name="posicao[]"]').value;
+            const descricao = item.querySelector('input[name="descricao_coluna[]"]').value;
+            const obrigatorio = item.querySelector('input[name="obrigatorio[]"]').checked ? 1 : 0;
+            const validacao = item.querySelector('input[name="validacao[]"]').value;
+            const tipo_dado = item.querySelector('select[name="tipo_dado[]"]').value;
+            
+            colunas.push({
+                posicao: parseInt(posicao),
+                descricao: descricao,
+                obrigatorio: obrigatorio,
+                validacao: validacao,
+                tipo_dado: tipo_dado
+            });
+        });
+        
+        // Adicionar colunas como campos hidden
+        colunas.forEach(coluna => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'colunas[]';
+            input.value = JSON.stringify(coluna);
+            this.appendChild(input);
+        });
+        
+        this.submit();
+    });
+});
+</script>
+
+<style>
+.form-section {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.form-section h3 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.coluna-item {
+    background: white;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.checkbox-container {
+    margin-top: 8px;
+}
+
+.form-actions {
+    text-align: center;
+    margin-top: 20px;
+}
+</style>
+{% endblock %}

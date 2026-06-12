@@ -1,0 +1,78 @@
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script>
+    // Inicialização quando o DOM estiver carregado
+    document.addEventListener('DOMContentLoaded', function() {
+        inicializarDashboard(
+            {{ cond_pag|tojson }},
+            {{ escol|tojson }},
+            {{ estado|tojson }},
+            {{ estadocivil|tojson }},
+            {{ municipio|tojson }},
+            {{ pais|tojson }},
+            {{ profissao|tojson }},
+            {{ segmentomercado|tojson }},
+            {{ tipologradouro|tojson }},
+            {{ departamento|tojson }},
+            {{ estoque|tojson }},
+            {{ naturezaoperacao|tojson }},
+            {{ equipe|tojson }},
+            {{ usuario_depara|tojson }}
+        );
+    });
+</script>
+<!-- templates/partials/scripts.html -->
+<script>
+    // Usar valores padrão quando as variáveis não estiverem definidas
+    window.cond_pag = {{ cond_pag|default({})|tojson }};
+    window.escol = {{ escol|default({})|tojson }};
+    window.estado = {{ estado|default({})|tojson }};
+    window.estadocivil = {{ estadocivil|default({})|tojson }};
+    window.municipio = {{ municipio|default({})|tojson }};
+    window.pais = {{ pais|default({})|tojson }};
+    window.profissao = {{ profissao|default({})|tojson }};
+    window.segmentomercado = {{ segmentomercado|default({})|tojson }};
+    window.tipologradouro = {{ tipologradouro|default({})|tojson }};
+    window.departamento = {{ departamento|default({})|tojson }};
+    window.estoque = {{ estoque|default({})|tojson }};
+    window.naturezaoperacao = {{ naturezaoperacao|default({})|tojson }};
+    window.equipe = {{ equipe|default({})|tojson }};
+    window.usuario_depara = {{ usuario_depara|default({})|tojson }};
+    window.clasmontadora = {{ clasmontadora|default({})|tojson }};
+    window.grupolucratividade = {{ grupolucratividade|default({})|tojson }};
+    window.grupoproduto = {{ grupoproduto|default({})|tojson }};
+    window.pessoacodfabricante = {{ pessoacodfabricante|default({})|tojson }};
+    window.procedencia = {{ procedencia|default({})|tojson }};
+    window.tabelapreco = {{ tabelapreco|default({})|tojson }};
+    window.tipoproduto = {{ tipoproduto|default({})|tojson }};
+    window.unidade = {{ unidade|default({})|tojson }};
+    window.combustivel = {{ combustivel|default({})|tojson }};
+    window.corexterna = {{ corexterna|default({})|tojson }};
+    window.corinterna = {{ corinterna|default({})|tojson }};
+    window.marca = {{ marca|default({})|tojson }};
+    window.modeloveiculo = {{ modeloveiculo|default({})|tojson }};
+    window.opcional = {{ opcional|default({})|tojson }};
+    window.setorservico = {{ setorservico|default({})|tojson }};
+    window.tipoos = {{ tipoos|default({})|tojson }};
+    window.tiposervico = {{ tiposervico|default({})|tojson }};
+    window.tmo = {{ tmo|default({})|tojson }};
+    window.veiculoano = {{ veiculoano|default({})|tojson }};
+    window.agentecobrador = {{ agentecobrador|default({})|tojson }};
+    window.banco = {{ banco|default({})|tojson }};
+    window.contagerencial = {{ contagerencial|default({})|tojson }};
+    window.tipocobranca = {{ tipocobranca|default({})|tojson }};
+    window.tipocreditodebito = {{ tipocreditodebito|default({})|tojson }};
+    window.tipodocumento = {{ tipodocumento|default({})|tojson }};
+    window.tipoficharazao = {{ tipoficharazao|default({})|tojson }};
+    window.tipotitulo = {{ tipotitulo|default({})|tojson }};
+    window.centroresultado = {{ centroresultado|default({})|tojson }};
+    window.historicopadrao = {{ historicopadrao|default({})|tojson }};
+    window.planoconta = {{ planoconta|default({})|tojson }};
+    window.subconta = {{ subconta|default({})|tojson }};
+    window.tipolote = {{ tipolote|default({})|tojson }};
+    window.tiposubconta = {{ tiposubconta|default({})|tojson }};
+    window.progresso_total = {{ progresso_total|default({})|tojson }};
+    window.escopos_habilitados = {{ escopos_habilitados|default([])|tojson }};
+    window.progresso_categorias = {{ progresso_categorias|default({})|tojson }};
+</script>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>

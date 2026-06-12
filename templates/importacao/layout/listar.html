@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Gerenciar Layouts</h1>
+        <a href="{{ url_for('layout.novo_layout') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Novo Layout
+        </a>
+    </div>
+
+    {% if layouts %}
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>Descrição</th>
+                    <th>Data Criação</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for layout in layouts %}
+                <tr>
+                    <td>{{ layout.LayoutID }}</td>
+                    <td>{{ layout.NomeLayout }}</td>
+                    <td>{{ layout.Descricao or '-' }}</td>
+                    <td>
+                        {% if layout.DataCriacao %}
+                            {% if layout.DataCriacao is string %}
+                                {{ layout.DataCriacao }}
+                            {% else %}
+                                {{ layout.DataCriacao.strftime('%d/%m/%Y %H:%M') }}
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('layout.editar_layout', layout_id=layout.LayoutID) }}" class="btn btn-sm btn-warning">
+                            <i class="fas fa-edit"></i> Editar
+                        </a>
+                        <button class="btn btn-sm btn-danger" onclick="excluirLayout({{ layout.LayoutID }})">
+                            <i class="fas fa-trash"></i> Excluir
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        Nenhum layout cadastrado. <a href="{{ url_for('layout.novo_layout') }}">Clique aqui</a> para criar o primeiro.
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function excluirLayout(layoutId) {
+    if (confirm('Tem certeza que deseja excluir este layout?')) {
+        fetch('{{ url_for("layout.excluir_layout", layout_id=0) }}'.replace('0', layoutId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao excluir layout');
+        });
+    }
+}
+</script>
+{% endblock %}
