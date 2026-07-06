@@ -3,6 +3,19 @@
 {% block content %}
 <div class="container">
     <h1>Importação de Arquivos - Sistema Novo</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="import-flash-messages">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category if category in ['success', 'error', 'warning', 'info'] else 'info' }}">
+            <i class="fas fa-{% if category == 'error' %}exclamation-circle{% elif category == 'success' %}check-circle{% elif category == 'warning' %}exclamation-triangle{% else %}info-circle{% endif %}"></i>
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
     
     <div class="upload-container">
         <!-- Card principal do Enviar Arquivo -->
@@ -21,7 +34,7 @@
                         <select name="layout_id" id="layout_id" class="form-control" required>
                             <option value="">Selecione um layout</option>
                             {% for layout in layouts %}
-                            <option value="{{ layout.LayoutID }}">{{ layout.NomeLayout }} - {{ layout.Descricao or '' }}</option>
+                            <option value="{{ layout.LayoutID }}" {% if layout_id_selecionado|string == layout.LayoutID|string %}selected{% endif %}>{{ layout.NomeLayout }} - {{ layout.Descricao or '' }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -31,20 +44,30 @@
                         <input type="file" name="arquivo" id="arquivo" class="form-control" accept=".csv,.txt" required>
                     </div>
                     
-                    <div class="info-box">
-                        <h4>
-                            <i class="fas fa-info-circle"></i> Informações do arquivo
-                        </h4>
-                        <div class="info-content">
+                    <div class="result-panel info-panel" data-panel="info-arquivo">
+                        <button type="button" class="result-panel-toggle info-toggle" aria-expanded="false">
+                            <span class="result-panel-title">
+                                <i class="fas fa-info-circle" style="color: #007bff;"></i>
+                                Informações do arquivo
+                            </span>
+                            <span class="result-panel-summary">CSV, TXT · separador § · Latin-1</span>
+                            <i class="fas fa-chevron-down result-panel-icon"></i>
+                        </button>
+                        <div class="result-panel-content info-content">
                             <div><strong>Formatos suportados:</strong> CSV, TXT</div>
                             <div><strong>Separador:</strong> § (pipeline)</div>
                             <div><strong>Encoding:</strong> Latin-1</div>
+                            <div><strong>Última coluna:</strong> se estiver vazia, pode omitir o § final — será preenchida automaticamente</div>
+                            <div><strong>Erros bloqueantes:</strong> falta de Nome (campo 2), CPF/CNPJ (campo 4) ou coluna(s) no arquivo (exceto só a última)</div>
+                            <div><strong>Importação:</strong> sem erros bloqueantes, valida e importa automaticamente (Pessoa_MG + De/Para)</div>
+                            <div><strong>Datas:</strong> remove letras e textos (NT, N/A, S/N, NULL, etc.); converte formatos válidos; inválidas ficam vazias</div>
+                            <div><strong>E-mail inválido:</strong> gera aviso e campo vazio — não impede a importação</div>
                             <div><strong>Gerenciar Layouts:</strong> Disponível no menu lateral para administradores</div>
                         </div>
                     </div>
                     
                     <button type="submit" class="btn-process" id="process-button" disabled>
-                        <i class="fas fa-cog"></i> Processar Arquivo
+                        <i class="fas fa-cog"></i> Validar e Importar
                     </button>
                 </form>
             </div>
@@ -53,94 +76,171 @@
         <!-- Seção de Resultados (fora do card principal) -->
         {% if process_id %}
         <div class="results-container">
-            <!-- Informações do Processamento -->
-            <div class="process-info">
-                <div class="process-info-item">
-                    <i class="fas fa-tag" style="color: #007bff;"></i>
-                    <strong>Layout:</strong> {{ layout }}
-                </div>
-                <div class="process-info-item">
-                    <i class="fas fa-exclamation-triangle" style="color: {% if total_erros == 0 %}#28a745{% else %}#dc3545{% endif %};"></i>
-                    <strong>Erros:</strong> {{ total_erros }}
-                </div>
-            </div>
-
-            <!-- Botões de Exportação -->
-            <div class="export-buttons">
-                {% if total_erros > 0 %}
-                <a href="{{ url_for('importacao.exportar_erros', process_id=process_id) }}" class="btn-export btn-export-error">
-                    <i class="fas fa-file-excel"></i> Exportar Todos os Erros ({{ total_erros }})
-                </a>
-                {% endif %}
-                
-                <a href="{{ url_for('importacao.exportar_processado', process_id=process_id) }}" class="btn-export btn-export-success">
-                    <i class="fas fa-file-excel"></i> Exportar Arquivo Processado
-                </a>
-            </div>
-
-            <!-- Tabela de Erros (limitada a 10) -->
-            {% if total_erros > 0 %}
-            <div class="table-container">
-                <h4 style="color: #dc3545;">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    Erros de Validação ({{ total_erros }})
-                </h4>
-                
-                <!-- Mensagem informativa -->
-                <div class="alert alert-info" style="margin-bottom: 15px;">
-                    <i class="fas fa-info-circle"></i>
-                    Mostrando os primeiros 10 erros. 
-                    {% if total_erros > 10 %}
-                    <strong>Exporte a lista completa para ver todos os {{ total_erros }} erros.</strong>
-                    {% endif %}
-                </div>
-                
-                <table class="compact-table">
-                    <thead>
-                        <tr>
-                            <th>Linha</th>
-                            <th>Coluna</th>
-                            <th>Erro</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% set error_count = 0 %}
-                        {% for index, row in df_errors.iterrows() %}
-                            {% if error_count < 10 %}
-                            <tr class="error-row">
-                                <td><strong>{{ row['Linha'] }}</strong></td>
-                                <td><code>{{ row['Coluna'] }}</code></td>
-                                <td>{{ row['Erro'] }}</td>
-                            </tr>
-                            {% set error_count = error_count + 1 %}
-                            {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-                
-                {% if total_erros > 10 %}
-                <div style="text-align: center; margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                    <i class="fas fa-ellipsis-h"></i>
-                    <span style="color: #6c757d; font-style: italic;">
-                        ... e mais {{ total_erros - 10 }} erros. Use o botão acima para exportar a lista completa.
+            <!-- Painel: Informações do processamento -->
+            <div class="result-panel open" data-panel="processamento">
+                <button type="button" class="result-panel-toggle" aria-expanded="true">
+                    <span class="result-panel-title">
+                        <i class="fas fa-clipboard-check"></i>
+                        Resultado do processamento
                     </span>
+                    <span class="result-panel-summary">
+                        {{ layout }} · {{ total_erros }} erro(s) · {{ total_avisos|default(0) }} aviso(s)
+                    </span>
+                    <i class="fas fa-chevron-down result-panel-icon"></i>
+                </button>
+                <div class="result-panel-content">
+                    <div class="process-info">
+                        <div class="process-info-item">
+                            <i class="fas fa-tag" style="color: #007bff;"></i>
+                            <strong>Layout:</strong> {{ layout }}
+                        </div>
+                        <div class="process-info-item">
+                            <i class="fas fa-exclamation-triangle" style="color: {% if total_erros == 0 %}#28a745{% else %}#dc3545{% endif %};"></i>
+                            <strong>Erros:</strong> {{ total_erros }}
+                        </div>
+                        <div class="process-info-item">
+                            <i class="fas fa-info-circle" style="color: {% if total_avisos|default(0) == 0 %}#28a745{% else %}#f59e0b{% endif %};"></i>
+                            <strong>Avisos:</strong> {{ total_avisos|default(0) }}
+                        </div>
+                    </div>
+                    <div class="export-buttons">
+                        {% if total_erros > 0 or total_avisos|default(0) > 0 %}
+                        <button type="button" class="btn-export btn-export-error" id="btn-abrir-detalhes"
+                                data-process-id="{{ process_id }}"
+                                data-total-erros="{{ total_erros }}"
+                                data-total-avisos="{{ total_avisos|default(0) }}"
+                                data-api-url="{{ url_for('importacao.api_detalhes', process_id=process_id) }}"
+                                data-export-url="{{ url_for('importacao.exportar_erros', process_id=process_id) }}">
+                            <i class="fas fa-list-alt"></i> Ver Erros e Avisos
+                        </button>
+                        {% endif %}
+                        <a href="{{ url_for('importacao.exportar_processado', process_id=process_id) }}" class="btn-export btn-export-success">
+                            <i class="fas fa-file-excel"></i> Exportar Arquivo Processado
+                        </a>
+                    </div>
                 </div>
-                {% endif %}
+            </div>
+
+            <!-- Painel: Importação automática (layout Forn_cli) -->
+            {% if importacao_base.exibe %}
+            <div class="result-panel import-base-panel open" data-panel="importar-base">
+                <button type="button" class="result-panel-toggle" aria-expanded="true">
+                    <span class="result-panel-title">
+                        <i class="fas fa-database" style="color: #007bff;"></i>
+                        Importação automática
+                    </span>
+                    <span class="result-panel-summary">
+                        {% if importacao_ultimo_resultado and importacao_ultimo_resultado.sucesso %}
+                        Concluída em {{ importacao_ultimo_resultado.banco_gx|default(importacao_base.banco_gx) }}.dbo.{{ importacao_ultimo_resultado.tabela_destino|default(importacao_base.tabela_destino) }}
+                        {% elif total_erros > 0 %}
+                        Bloqueada por erros
+                        {% elif importacao_base.pode %}
+                        {{ importacao_base.banco_gx }}.dbo.{{ importacao_base.tabela_destino }}
+                        {% if importacao_base.procedure %} ({{ importacao_base.procedure }}){% endif %}
+                        {% else %}
+                        {{ importacao_base.motivo }}
+                        {% endif %}
+                    </span>
+                    <i class="fas fa-chevron-down result-panel-icon"></i>
+                </button>
+                <div class="result-panel-content">
+                    <div class="import-base-body">
+                        {% if importacao_ultimo_resultado %}
+                        <div class="alert alert-{{ 'success' if importacao_ultimo_resultado.sucesso else 'error' }}" style="margin-bottom:16px;text-align:left;">
+                            <i class="fas fa-{{ 'check-circle' if importacao_ultimo_resultado.sucesso else 'exclamation-circle' }}"></i>
+                            <strong>{{ 'Importação concluída' if importacao_ultimo_resultado.sucesso else 'Falha na importação' }}:</strong>
+                            {{ importacao_ultimo_resultado.mensagem }}
+                            {% if importacao_ultimo_resultado.sucesso and importacao_ultimo_resultado.resumo.total is defined %}
+                            <div style="margin-top:8px;font-size:0.9rem;">
+                                Total: {{ importacao_ultimo_resultado.resumo.total|default(0) }} ·
+                                Flag=1: {{ importacao_ultimo_resultado.resumo.flag_1|default(0) }} ·
+                                Flag=0: {{ importacao_ultimo_resultado.resumo.flag_0|default(0) }}
+                            </div>
+                            {% endif %}
+                            {% if importacao_ultimo_resultado.sucesso and importacao_ultimo_resultado.resumo.procedure %}
+                            <div style="margin-top:8px;font-size:0.9rem;">
+                                Procedure: {{ importacao_ultimo_resultado.resumo.procedure }}
+                            </div>
+                            {% endif %}
+                            {% if importacao_ultimo_resultado.sucesso and importacao_ultimo_resultado.resumo.depara %}
+                            <div style="margin-top:8px;font-size:0.9rem;">
+                                {% if importacao_ultimo_resultado.resumo.depara.segmento_mercado is defined %}
+                                Segmento: {{ importacao_ultimo_resultado.resumo.depara.segmento_mercado.vinculados_wf|default(0) }} WF ·
+                                Escolaridade: {{ importacao_ultimo_resultado.resumo.depara.escolaridade.vinculados_wf|default(0) }} WF ·
+                                Profissão: {{ importacao_ultimo_resultado.resumo.depara.profissao.vinculados_wf|default(0) }} WF ·
+                                Estado Civil: {{ importacao_ultimo_resultado.resumo.depara.estado_civil.vinculados_wf|default(0) }} WF
+                                {% elif importacao_ultimo_resultado.resumo.depara.municipio is defined %}
+                                Município: {{ importacao_ultimo_resultado.resumo.depara.municipio.vinculados_wf|default(0) }} WF ·
+                                Tipo Logradouro: {{ importacao_ultimo_resultado.resumo.depara.tipo_logradouro.vinculados_wf|default(0) }} WF ·
+                                Estado: {{ importacao_ultimo_resultado.resumo.depara.estado.vinculados_wf|default(0) }} WF ·
+                                País: {{ importacao_ultimo_resultado.resumo.depara.pais.vinculados_wf|default(0) }} WF
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% elif total_erros > 0 %}
+                        <div class="alert alert-warning import-base-alert">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Corrija os erros bloqueantes e envie o arquivo novamente.
+                        </div>
+                        {% elif not importacao_base.pode %}
+                        <div class="alert alert-warning import-base-alert">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            {{ importacao_base.motivo }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
             {% endif %}
 
-            <!-- Tabela de Dados Processados -->
-            {% if dados_processados %}
-            <div class="table-container">
-                <h4 style="color: #28a745;">
-                    <i class="fas fa-check-circle"></i>
-                    Dados Processados (Primeiras 50 linhas)
-                </h4>
-                <div class="table-responsive">
-                    {{ dados_processados | safe }}
+        <!-- Modal: Erros e Avisos -->
+        <div class="import-modal-overlay" id="modal-detalhes" hidden>
+            <div class="import-modal" role="dialog" aria-labelledby="modal-detalhes-titulo" aria-modal="true">
+                <div class="import-modal-header">
+                    <h3 id="modal-detalhes-titulo"><i class="fas fa-list-alt"></i> Erros e Avisos</h3>
+                    <button type="button" class="import-modal-close" id="modal-detalhes-fechar" aria-label="Fechar">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="import-modal-tabs">
+                    <button type="button" class="import-modal-tab active" data-tipo="erros" id="tab-erros">
+                        <i class="fas fa-exclamation-triangle"></i> Erros
+                        <span class="import-modal-tab-count" id="tab-count-erros">0</span>
+                    </button>
+                    <button type="button" class="import-modal-tab" data-tipo="avisos" id="tab-avisos">
+                        <i class="fas fa-info-circle"></i> Avisos
+                        <span class="import-modal-tab-count" id="tab-count-avisos">0</span>
+                    </button>
+                </div>
+                <div class="import-modal-body">
+                    <div class="import-modal-loading" id="modal-detalhes-loading" hidden>
+                        <i class="fas fa-spinner fa-spin"></i> Carregando...
+                    </div>
+                    <div class="import-modal-empty" id="modal-detalhes-vazio" hidden>
+                        Nenhum registro para exibir.
+                    </div>
+                    <div class="import-modal-table-wrap" id="modal-detalhes-tabela-wrap">
+                        <table class="compact-table import-modal-table">
+                            <thead>
+                                <tr>
+                                    <th>Linha</th>
+                                    <th>Coluna</th>
+                                    <th id="modal-col-mensagem">Erro</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modal-detalhes-corpo"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="import-modal-footer">
+                    <span class="import-modal-total" id="modal-detalhes-total"></span>
+                    <a href="#" class="btn-export btn-export-success" id="modal-detalhes-exportar">
+                        <i class="fas fa-file-excel"></i> Exportar para Excel
+                    </a>
                 </div>
             </div>
-            {% endif %}
+        </div>
         </div>
         {% endif %}
     </div>
@@ -215,21 +315,17 @@
     box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
 }
 
-.info-box {
-    background: #e9f7fe;
-    padding: 20px;
-    border-radius: 4px;
-    margin: 25px 0;
+.result-panel.info-panel {
+    margin: 20px 0;
     border-left: 4px solid #007bff;
 }
 
-.info-box h4 {
-    margin: 0 0 12px 0;
-    font-size: 1em;
-    color: #007bff;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.result-panel.info-panel .info-toggle {
+    background: #e9f7fe;
+}
+
+.result-panel.info-panel .info-toggle:hover {
+    background: #d6effc;
 }
 
 .info-content {
@@ -239,6 +335,22 @@
 
 .info-content div {
     margin-bottom: 6px;
+}
+
+.result-panel-badge--error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.result-panel-footer {
+    text-align: center;
+    margin-top: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    color: #6c757d;
+    font-style: italic;
+    font-size: 0.9rem;
 }
 
 .btn-process {
@@ -277,12 +389,92 @@
     margin-top: 30px;
 }
 
+.result-panel {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 16px;
+    overflow: hidden;
+    border: 1px solid #e9ecef;
+}
+
+.result-panel-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: #f8f9fa;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: background 0.2s ease;
+}
+
+.result-panel-toggle:hover {
+    background: #eef1f4;
+}
+
+.result-panel-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.result-panel-summary {
+    flex: 1;
+    font-size: 0.85rem;
+    color: #6c757d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-panel-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 11px;
+    background: #fff3cd;
+    color: #856404;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.result-panel-icon {
+    color: #6c757d;
+    transition: transform 0.25s ease;
+    flex-shrink: 0;
+}
+
+.result-panel.open .result-panel-icon {
+    transform: rotate(180deg);
+}
+
+.result-panel-content {
+    display: none;
+    padding: 20px;
+    border-top: 1px solid #e9ecef;
+}
+
+.result-panel.open .result-panel-content {
+    display: block;
+}
+
 .export-buttons {
     display: flex;
     gap: 15px;
     justify-content: center;
     flex-wrap: wrap;
-    margin: 20px 0;
+    margin: 0;
 }
 
 .btn-export {
@@ -296,6 +488,13 @@
     transition: all 0.3s ease;
     min-width: 200px;
     justify-content: center;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+button.btn-export {
+    border: none;
 }
 
 .btn-export-error {
@@ -326,11 +525,80 @@
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
+.btn-import-base {
+    background-color: #007bff;
+    color: white;
+    border: 1px solid #007bff;
+    cursor: pointer;
+    font-size: inherit;
+    font-family: inherit;
+}
+
+.btn-import-base:hover {
+    background-color: #0069d9;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.import-base-panel {
+    border: 2px solid #007bff;
+    background: linear-gradient(180deg, #f0f7ff 0%, #fff 100%);
+}
+
+.import-base-body {
+    text-align: center;
+    padding: 10px 0 5px;
+}
+
+.import-base-desc {
+    color: #495057;
+    margin-bottom: 20px;
+    line-height: 1.5;
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.btn-import-base-lg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 32px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    min-width: 320px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.35);
+}
+
+.btn-import-base-lg:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 123, 255, 0.45);
+}
+
+.import-base-hint {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.import-base-alert {
+    max-width: 560px;
+    margin: 0 auto;
+    text-align: left;
+}
+
 .process-info {
     display: flex;
     gap: 20px;
     flex-wrap: wrap;
-    margin: 15px 0;
+    margin: 0 0 20px;
     justify-content: center;
 }
 
@@ -374,6 +642,10 @@
     background: #f8d7da;
 }
 
+.warning-row {
+    background: #fff3cd;
+}
+
 .alert {
     padding: 12px 15px;
     border-radius: 4px;
@@ -384,6 +656,230 @@
     background-color: #d1ecf1;
     border: 1px solid #bee5eb;
     color: #0c5460;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.alert-error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
+}
+
+.import-flash-messages .alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    white-space: pre-line;
+    line-height: 1.5;
+}
+
+.import-flash-messages {
+    max-width: 800px;
+    margin: 0 auto 20px;
+}
+
+.btn-process.processing {
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+/* Modal Erros / Avisos */
+.import-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.import-modal-overlay[hidden] {
+    display: none !important;
+}
+
+.import-modal {
+    background: #fff;
+    border-radius: 10px;
+    width: min(920px, 100%);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.import-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+}
+
+.import-modal-header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    color: #2c3e50;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.import-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.import-modal-close:hover {
+    background: #e9ecef;
+    color: #333;
+}
+
+.import-modal-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #e9ecef;
+    background: #fff;
+}
+
+.import-modal-tab {
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    background: #f8f9fa;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.import-modal-tab:hover {
+    background: #eef1f4;
+}
+
+.import-modal-tab.active[data-tipo="erros"] {
+    color: #721c24;
+    background: #fff;
+    border-bottom-color: #dc3545;
+}
+
+.import-modal-tab.active[data-tipo="avisos"] {
+    color: #856404;
+    background: #fff;
+    border-bottom-color: #f59e0b;
+}
+
+.import-modal-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 11px;
+    background: #e9ecef;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.import-modal-tab.active[data-tipo="erros"] .import-modal-tab-count {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.import-modal-tab.active[data-tipo="avisos"] .import-modal-tab-count {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.import-modal-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+    position: relative;
+}
+
+.import-modal-loading,
+.import-modal-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: #6c757d;
+}
+
+.import-modal-table-wrap {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+}
+
+.import-modal-table {
+    margin: 0;
+}
+
+.import-modal-table tbody tr.erros-row {
+    background: #fdf2f2;
+}
+
+.import-modal-table tbody tr.avisos-row {
+    background: #fffdf5;
+}
+
+.import-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 20px;
+    border-top: 1px solid #e9ecef;
+    background: #f8f9fa;
+    flex-wrap: wrap;
+}
+
+.import-modal-total {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.import-modal-footer .btn-export {
+    min-width: auto;
+    padding: 10px 18px;
+}
+
+.import-modal-tab:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.import-modal-tab:disabled:hover {
+    background: #f8f9fa;
 }
 
 /* Responsividade */
@@ -416,6 +912,10 @@
     .btn-export {
         min-width: 250px;
     }
+
+    .result-panel-summary {
+        display: none;
+    }
 }
 </style>
 
@@ -441,8 +941,151 @@ document.addEventListener('DOMContentLoaded', function() {
     arquivoInput.addEventListener('change', updateProcessButton);
     layoutSelect.addEventListener('change', updateProcessButton);
     
+    document.getElementById('upload-form').addEventListener('submit', function() {
+        processButton.disabled = true;
+        processButton.classList.add('processing');
+        processButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validando e importando...';
+    });
+    
     // Feedback inicial
     updateProcessButton();
+
+    document.querySelectorAll('.result-panel-toggle').forEach(function(toggle) {
+        toggle.addEventListener('click', function() {
+            const panel = this.closest('.result-panel');
+            const isOpen = panel.classList.toggle('open');
+            this.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+    });
+
+    /* Modal Erros / Avisos */
+    const btnAbrirDetalhes = document.getElementById('btn-abrir-detalhes');
+    const modalDetalhes = document.getElementById('modal-detalhes');
+    if (btnAbrirDetalhes && modalDetalhes) {
+        const processId = btnAbrirDetalhes.dataset.processId;
+        const apiBaseUrl = btnAbrirDetalhes.dataset.apiUrl;
+        const exportBaseUrl = btnAbrirDetalhes.dataset.exportUrl;
+        const totalErros = parseInt(btnAbrirDetalhes.dataset.totalErros || '0', 10);
+        const totalAvisos = parseInt(btnAbrirDetalhes.dataset.totalAvisos || '0', 10);
+        const tabErros = document.getElementById('tab-erros');
+        const tabAvisos = document.getElementById('tab-avisos');
+        const tabCountErros = document.getElementById('tab-count-erros');
+        const tabCountAvisos = document.getElementById('tab-count-avisos');
+        const corpoTabela = document.getElementById('modal-detalhes-corpo');
+        const colMensagem = document.getElementById('modal-col-mensagem');
+        const loading = document.getElementById('modal-detalhes-loading');
+        const vazio = document.getElementById('modal-detalhes-vazio');
+        const tabelaWrap = document.getElementById('modal-detalhes-tabela-wrap');
+        const totalEl = document.getElementById('modal-detalhes-total');
+        const btnExportar = document.getElementById('modal-detalhes-exportar');
+        const btnFechar = document.getElementById('modal-detalhes-fechar');
+        const cache = { erros: null, avisos: null };
+        let tipoAtual = totalErros > 0 ? 'erros' : 'avisos';
+
+        tabCountErros.textContent = totalErros;
+        tabCountAvisos.textContent = totalAvisos;
+        if (totalErros === 0) tabErros.disabled = true;
+        if (totalAvisos === 0) tabAvisos.disabled = true;
+
+        function fecharModal() {
+            modalDetalhes.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function abrirModal() {
+            modalDetalhes.hidden = false;
+            document.body.style.overflow = 'hidden';
+            carregarTipo(tipoAtual);
+        }
+
+        function ativarTab(tipo) {
+            tipoAtual = tipo;
+            tabErros.classList.toggle('active', tipo === 'erros');
+            tabAvisos.classList.toggle('active', tipo === 'avisos');
+            colMensagem.textContent = tipo === 'erros' ? 'Erro' : 'Ajuste realizado';
+            btnExportar.href = exportBaseUrl + '?tipo=' + tipo;
+            carregarTipo(tipo);
+        }
+
+        function renderTabela(tipo, items) {
+            corpoTabela.innerHTML = '';
+            const rowClass = tipo === 'erros' ? 'erros-row' : 'avisos-row';
+            items.forEach(function(item) {
+                const tr = document.createElement('tr');
+                tr.className = rowClass;
+                tr.innerHTML = '<td><strong>' + item.Linha + '</strong></td>'
+                    + '<td><code>' + escapeHtml(item.Coluna) + '</code></td>'
+                    + '<td>' + escapeHtml(item.Mensagem) + '</td>';
+                corpoTabela.appendChild(tr);
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function carregarTipo(tipo) {
+            loading.hidden = false;
+            vazio.hidden = true;
+            tabelaWrap.hidden = true;
+            totalEl.textContent = '';
+
+            if (cache[tipo]) {
+                exibirItems(tipo, cache[tipo]);
+                return;
+            }
+
+            fetch(apiBaseUrl + '?tipo=' + tipo)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.erro) {
+                        loading.hidden = true;
+                        vazio.hidden = false;
+                        vazio.textContent = data.erro;
+                        return;
+                    }
+                    cache[tipo] = data.items || [];
+                    exibirItems(tipo, cache[tipo]);
+                })
+                .catch(function() {
+                    loading.hidden = true;
+                    vazio.hidden = false;
+                    vazio.textContent = 'Erro ao carregar os dados.';
+                });
+        }
+
+        function exibirItems(tipo, items) {
+            loading.hidden = true;
+            if (!items.length) {
+                vazio.hidden = false;
+                tabelaWrap.hidden = true;
+                totalEl.textContent = '0 registro(s)';
+                return;
+            }
+            vazio.hidden = true;
+            tabelaWrap.hidden = false;
+            renderTabela(tipo, items);
+            totalEl.textContent = items.length + ' registro(s)';
+        }
+
+        btnAbrirDetalhes.addEventListener('click', abrirModal);
+        btnFechar.addEventListener('click', fecharModal);
+        modalDetalhes.addEventListener('click', function(e) {
+            if (e.target === modalDetalhes) fecharModal();
+        });
+        tabErros.addEventListener('click', function() { if (!tabErros.disabled) ativarTab('erros'); });
+        tabAvisos.addEventListener('click', function() { if (!tabAvisos.disabled) ativarTab('avisos'); });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !modalDetalhes.hidden) fecharModal();
+        });
+    }
+    
+    {% if process_id %}
+    document.querySelector('.results-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    {% endif %}
 });
 </script>
+{% endblock %}
 {% endblock %}

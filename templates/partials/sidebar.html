@@ -38,13 +38,6 @@
 </li>
 
         
-        <!-- MENU DE IMPORTAÇÃO - SISTEMA ANTIGO -->
-        <li>
-            <a href="{{ url_for('envio_arquivo.index') }}" {% if request.endpoint == 'envio_arquivo.index' %}class="active"{% endif %}>
-                <i class="fas fa-file-import"></i> <span>Importação (Antigo)</span>
-            </a>
-        </li>
-        
         {% if usuario and usuario.adm == 1 %}
         <li>
             <a href="{{ url_for('usuarios.gerenciar_usuarios') }}" {% if request.endpoint == 'usuarios.gerenciar_usuarios' %}class="active"{% endif %}>
@@ -65,6 +58,10 @@
             </a>
         </li>
     </ul>
+
+    <div class="sidebar-update">
+        <p>Atualizado em: <span id="sidebar-update-date"></span></p>
+    </div>
 
     <button class="toggle-sidebar" id="toggleSidebar">
         <i class="fas fa-chevron-left"></i>

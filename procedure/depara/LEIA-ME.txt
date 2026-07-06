@@ -1,0 +1,38 @@
+PROCEDURES DE/PARA PESSOA (POS-IMPORTACAO)
+==========================================
+
+Estrutura
+---------
+  _util/                          Utilitarios (drop up_01 a up_08)
+  Forn_cli/                       De/Para apos importacao forn_cli
+  Endereco/                       De/Para apos importacao forn_cli_endereco
+  Banco/                          De/Para apos importacao forn_cli_dados_bancarios
+
+Como instalar em um banco DadosGX
+---------------------------------
+1. Abra cada arquivo .sql (ou instalar_todas.sql no SSMS) no banco DadosGX do projeto.
+2. Altere USE [DadosGX_SeuProjeto] no inicio de cada script.
+3. Execute na ordem numerica (01, 02, 03...) ou use instalar_todas.sql.
+4. Apos criar todas as procedures De/Para, execute UMA VEZ o utilitario de replace
+   que ja existe nas procedures de extracao (pasta pai):
+
+   :r ..\_util\up_Replace_Name_DadosGx_Procedures.sql
+   GO
+   EXEC dbo.up_Replace_Name_DadosGx_Procedures @BancoDadosGX = 'NomeExatoDoSeuBanco';
+
+   Isso substitui o nome template (DadosGx_ViaVR_AbrMai) pelo banco real dentro das procedures.
+
+Como a aplicacao chama (importacao automatica)
+----------------------------------------------
+  forn_cli                -> up_01 a up_04
+  forn_cli_endereco       -> up_05 a up_07
+  forn_cli_dados_bancarios -> up_08
+
+  Parametros: @BancoDadosGX (banco DadosGX do projeto), @BancoWF (banco Workflow)
+
+Ordem recomendada
+-----------------
+  1. Instalar procedures de extracao (procedure\instalar_todas.sql)
+  2. Executar up_Replace_Name_DadosGx_Procedures (procedure\_util\)
+  3. Instalar procedures De/Para (procedure\depara\instalar_todas.sql)
+  4. Executar up_Replace_Name_DadosGx_Procedures novamente (inclui as novas De/Para)

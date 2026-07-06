@@ -256,51 +256,7 @@
     </script>
 
     <!-- Sidebar -->
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h2>DE X PARA</h2>
-            <p>Sistema de Autenticação</p>
-        </div>
-
-        <ul class="sidebar-menu">
-            <li><a href="#" class="active"><i class="fas fa-home"></i> <span>Dashboard</span></a></li>
-            
-            <!-- OPÇÃO PARA TROCAR PROJETO -->
-            <li>
-                <a href="{{ url_for('auth.trocar_projeto') }}">
-                    <i class="fas fa-sync-alt"></i> <span>Trocar Projeto</span>
-                </a>
-            </li>
-            
-            {% if usuario.adm == 1 %}
-            <!-- OPÇÃO DE ENVIO DE ARQUIVO - APENAS PARA ADM -->
-            <li>
-                <a href="{{ url_for('envio_arquivo.index') }}">
-                    <i class="fas fa-file-upload"></i> <span>Envio de Arquivo</span>
-                </a>
-            </li>
-
-            <!-- GERENCIAR USUÁRIOS - APENAS PARA ADM -->
-            <li>
-                <a href="{{ url_for('usuarios.gerenciar_usuarios') }}">
-                    <i class="fas fa-users-cog"></i> <span>Gerenciar Usuários</span>
-                </a>
-            </li>
-            {% endif %}
-            
-            <li><a href="{{ url_for('dashboard.logout') }}"><i class="fas fa-sign-out-alt"></i> <span>Sair</span></a></li>
-        </ul>
-
-        <!-- Data de atualização na sidebar -->
-        <div class="sidebar-update">
-            <p>Atualizado em: <span id="sidebar-update-date"></span></p>
-        </div>
-        
-        <button class="toggle-sidebar" id="toggleSidebar">
-            <i class="fas fa-chevron-left"></i>
-            <span>Recolher Menu</span>
-        </button>
-    </div>
+    {% include 'partials/sidebar.html' %}
     
     <!-- Main Content -->
     <div class="main-content">

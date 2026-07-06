@@ -1,19 +1,19 @@
-// dashboard.js - Versão Corrigida com data na sidebar
+// dashboard.js - VersÃ£o Corrigida com data na sidebar
 
 // Mapeamento de tabelas para rotas
 const tableRoutes = {
-    'Condição de Pagamento': '/condicao_pagamento',
+    'CondiÃ§Ã£o de Pagamento': '/condicao_pagamento',
     'Escolaridade': '/escolaridade',
     'Estado': '/estado',
     'Estado Civil': '/estadocivil',
-    'Município': '/municipio',
-    'País': '/pais',
-    'Profissão': '/profissao',
+    'MunicÃ­pio': '/municipio',
+    'PaÃ­s': '/pais',
+    'ProfissÃ£o': '/profissao',
     'Segmento Mercado': '/segmentomercado',
     'Tipo Logradouro': '/tipologradouro',
     'Departamento': '/departamento',
     'Estoque': '/estoque',
-    'Natureza Operação': '/naturezaoperacao',
+    'Natureza OperaÃ§Ã£o': '/naturezaoperacao',
     'Equipe': '/equipe',
     'Usuario DePara': '/usuario_depara',
     'Clas Montadora': '/clasmontadora',
@@ -51,7 +51,7 @@ const tableRoutes = {
     'Tipo Sub Conta': '/tiposubconta'
 };
 
-// Função para criar barra de progresso COM TEXTO PRETO
+// FunÃ§Ã£o para criar barra de progresso COM TEXTO PRETO
 function createProgressBar(percentual, qtd) {
     if (percentual === undefined || percentual === null) {
         percentual = 0;
@@ -82,10 +82,14 @@ function createProgressBar(percentual, qtd) {
     `;
 }
 
-// Função para criar links nas tabelas
+// FunÃ§Ã£o para criar links nas tabelas
 function createTableLinks() {
+    if (!document.querySelector('.status-table')) {
+        return;
+    }
+
     console.log("=== CRIANDO LINKS NAS TABELAS ===");
-    let banco_usuario = 'DB_PADRAO'; // valor padrão
+    let banco_usuario = 'DB_PADRAO'; // valor padrÃ£o
 
     if (window.empresa_selecionada && window.empresa_selecionada.DadosGX) {
         banco_usuario = window.empresa_selecionada.DadosGX;
@@ -110,31 +114,30 @@ function createTableLinks() {
     });
 }
 
-// Função genérica para preencher tabelas
+// FunÃ§Ã£o genÃ©rica para preencher tabelas
 function fillTable(tbodyId, dataArray, categoryName) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) {
-        console.error(`Elemento #${tbodyId} não encontrado`);
         return;
     }
 
     tbody.innerHTML = '';
 
     if (!dataArray || dataArray.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">Nenhum dado disponível</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">Nenhum dado disponÃ­vel</td></tr>';
         return;
     }
 
     dataArray.forEach(item => {
         const row = document.createElement('tr');
 
-        // Célula do nome da tabela
+        // CÃ©lula do nome da tabela
         const nameCell = document.createElement('td');
         nameCell.textContent = item.tabela || 'N/A';
         nameCell.style.fontWeight = '500';
         nameCell.style.padding = '12px 8px';
 
-        // Célula de status
+        // CÃ©lula de status
         const statusCell = document.createElement('td');
         const percentual = item.percentualConclusao || 0;
         const qtd = item.qtd || 0;
@@ -142,12 +145,12 @@ function fillTable(tbodyId, dataArray, categoryName) {
         let statusText = 'Pendente';
         let statusClass = 'status-pendente';
 
-        // Se QTD for 0, mostra "Não se aplica" com cor neutra
+        // Se QTD for 0, mostra "NÃ£o se aplica" com cor neutra
         if (qtd === 0) {
-            statusText = 'Não se aplica';
+            statusText = 'NÃ£o se aplica';
             statusClass = 'status-inaplicavel';
         } else if (percentual === 100) {
-            statusText = 'Concluído';
+            statusText = 'ConcluÃ­do';
             statusClass = 'status-concluido';
         } else if (percentual >= 70) {
             statusText = 'Em Andamento';
@@ -162,19 +165,19 @@ function fillTable(tbodyId, dataArray, categoryName) {
         statusCell.style.padding = '12px 8px';
         statusCell.style.fontWeight = '600';
 
-        // Célula de quantidade total
+        // CÃ©lula de quantidade total
         const qtdCell = document.createElement('td');
         qtdCell.textContent = qtd;
         qtdCell.style.textAlign = 'center';
         qtdCell.style.padding = '12px 8px';
 
-        // Célula de quantidade pendente
+        // CÃ©lula de quantidade pendente
         const qtdPendenteCell = document.createElement('td');
         qtdPendenteCell.textContent = item.qtdPendente || 0;
         qtdPendenteCell.style.textAlign = 'center';
         qtdPendenteCell.style.padding = '12px 8px';
 
-        // Célula de percentual com barra de progresso
+        // CÃ©lula de percentual com barra de progresso
         const percentualCell = document.createElement('td');
         percentualCell.innerHTML = createProgressBar(percentual, qtd);
         percentualCell.style.padding = '12px 8px';
@@ -195,13 +198,13 @@ function fillTable(tbodyId, dataArray, categoryName) {
 function fillPessoaTable() {
     console.log("Preenchendo tabela PESSOA...");
     const data = [
-        { tabela: 'Condição de Pagamento', ...(window.cond_pag || {}) },
+        { tabela: 'CondiÃ§Ã£o de Pagamento', ...(window.cond_pag || {}) },
         { tabela: 'Escolaridade', ...(window.escol || {}) },
         { tabela: 'Estado', ...(window.estado || {}) },
         { tabela: 'Estado Civil', ...(window.estadocivil || {}) },
-        { tabela: 'Município', ...(window.municipio || {}) },
-        { tabela: 'País', ...(window.pais || {}) },
-        { tabela: 'Profissão', ...(window.profissao || {}) },
+        { tabela: 'MunicÃ­pio', ...(window.municipio || {}) },
+        { tabela: 'PaÃ­s', ...(window.pais || {}) },
+        { tabela: 'ProfissÃ£o', ...(window.profissao || {}) },
         { tabela: 'Segmento Mercado', ...(window.segmentomercado || {}) },
         { tabela: 'Tipo Logradouro', ...(window.tipologradouro || {}) }
     ];
@@ -214,19 +217,19 @@ function fillGeralTable() {
     const data = [
         { tabela: 'Departamento', ...(window.departamento || {}) },
         { tabela: 'Estoque', ...(window.estoque || {}) },
-        { tabela: 'Natureza Operação', ...(window.naturezaoperacao || {}) },
+        { tabela: 'Natureza OperaÃ§Ã£o', ...(window.naturezaoperacao || {}) },
         { tabela: 'Equipe', ...(window.equipe || {}) }
     ];
     fillTable('tbody-geral', data, 'GERAL');
 }
 
-// Preencher tabela USUÁRIOS
+// Preencher tabela USUÃRIOS
 function fillUsuariosTable() {
-    console.log("Preenchendo tabela USUÁRIOS...");
+    console.log("Preenchendo tabela USUÃRIOS...");
     const data = [
         { tabela: 'Usuario DePara', ...(window.usuario_depara || {}) }
     ];
-    fillTable('tbody-usuarios', data, 'USUÁRIOS');
+    fillTable('tbody-usuarios', data, 'USUÃRIOS');
 }
 
 // Preencher tabela PRODUTO
@@ -245,9 +248,9 @@ function fillProdutoTable() {
     fillTable('tbody-produto', data, 'PRODUTO');
 }
 
-// Preencher tabela VEÍCULOS
+// Preencher tabela VEÃCULOS
 function fillVeiculosTable() {
-    console.log("Preenchendo tabela VEÍCULOS...");
+    console.log("Preenchendo tabela VEÃCULOS...");
     const data = [
         { tabela: 'Combustivel', ...(window.combustivel || {}) },
         { tabela: 'Cor Externa', ...(window.corexterna || {}) },
@@ -261,7 +264,7 @@ function fillVeiculosTable() {
         { tabela: 'TMO', ...(window.tmo || {}) },
         { tabela: 'Veiculo Ano', ...(window.veiculoano || {}) }
     ];
-    fillTable('tbody-veiculos', data, 'VEÍCULOS');
+    fillTable('tbody-veiculos', data, 'VEÃCULOS');
 }
 
 // Preencher tabela FINANCEIRO
@@ -294,7 +297,7 @@ function fillContabilidadeTable() {
     fillTable('tbody-contabilidade', data, 'CONTABILIDADE');
 }
 
-// Função para atualizar datas - AGORA APENAS NA SIDEBAR
+// FunÃ§Ã£o para atualizar datas - AGORA APENAS NA SIDEBAR
 function updateDates() {
     const now = new Date();
     const dateStr = now.toLocaleString('pt-BR');
@@ -306,18 +309,18 @@ function updateDates() {
     }
 }
 
-// Função para verificar se um quadro deve ser mostrado
+// FunÃ§Ã£o para verificar se um quadro deve ser mostrado
 function shouldShowCategory(categoryName) {
     if (!window.escopos_habilitados || window.escopos_habilitados.length === 0) {
-        return true; // Mostrar tudo se não houver escopos definidos
+        return true; // Mostrar tudo se nÃ£o houver escopos definidos
     }
 
     const categoryToScope = {
         'Pessoa': 'PESSOA',
         'Geral': 'GERAL',
-        'Usuários': 'GERAL',
+        'UsuÃ¡rios': 'GERAL',
         'Produto': 'PRODUTOS',
-        'Veículos': 'VEICULOS',
+        'VeÃ­culos': 'VEICULOS',
         'Financeiro': 'FINANCEIRO',
         'Contabilidade': 'CONTABILIDADE'
     };
@@ -326,7 +329,7 @@ function shouldShowCategory(categoryName) {
     return scope ? window.escopos_habilitados.includes(scope) : false;
 }
 
-// Função para scroll suave até o topo
+// FunÃ§Ã£o para scroll suave atÃ© o topo
 function scrollToTop() {
     window.scrollTo({
         top: 0,
@@ -334,14 +337,22 @@ function scrollToTop() {
     });
 }
 
-// Função principal para inicializar o dashboard
+function isDashboardPage() {
+    return document.getElementById('tbody-pessoa') !== null;
+}
+
+// FunÃ§Ã£o principal para inicializar o dashboard
 function initializeDashboard() {
+    if (!isDashboardPage()) {
+        return;
+    }
+
     console.log("=== INICIALIZANDO DASHBOARD ===");
     console.log("Escopos habilitados:", window.escopos_habilitados);
 
-    // Verificar se os dados básicos estão disponíveis
+    // Verificar se os dados bÃ¡sicos estÃ£o disponÃ­veis
     if (!window.cond_pag) {
-        console.warn("Dados não carregados completamente. Aguardando...");
+        console.warn("Dados nÃ£o carregados completamente. Aguardando...");
         setTimeout(initializeDashboard, 100);
         return;
     }
@@ -355,13 +366,13 @@ function initializeDashboard() {
     if (shouldShowCategory('Geral')) {
         fillGeralTable();
     }
-    if (shouldShowCategory('Usuários')) {
+    if (shouldShowCategory('UsuÃ¡rios')) {
         fillUsuariosTable();
     }
     if (shouldShowCategory('Produto')) {
         fillProdutoTable();
     }
-    if (shouldShowCategory('Veículos')) {
+    if (shouldShowCategory('VeÃ­culos')) {
         fillVeiculosTable();
     }
     if (shouldShowCategory('Financeiro')) {
@@ -374,7 +385,7 @@ function initializeDashboard() {
     // Atualizar datas (apenas na sidebar)
     updateDates();
 
-    // Criar links após preencher as tabelas
+    // Criar links apÃ³s preencher as tabelas
     setTimeout(createTableLinks, 300);
 
     console.log("Dashboard inicializado com sucesso!");
@@ -408,18 +419,52 @@ function initializeSidebar() {
     }
 }
 
-// Inicialização quando o DOM estiver pronto
+// InicializaÃ§Ã£o quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', function () {
-    console.log("DOM Carregado - Iniciando Dashboard");
-
     initializeSidebar();
 
-    // Aguardar um pouco para garantir que os dados do window estão disponíveis
-    setTimeout(initializeDashboard, 200);
+    if (isDashboardPage()) {
+        console.log("DOM Carregado - Iniciando Dashboard");
+        setTimeout(initializeDashboard, 200);
+    }
+
+    initializeImportMenu();
 });
 
-// Debug detalhado
+function initializeImportMenu() {
+    const menuWithSubmenu = document.querySelectorAll('.menu-with-submenu > a');
+
+    menuWithSubmenu.forEach(menu => {
+        menu.addEventListener('click', function (e) {
+            e.preventDefault();
+            const parent = this.parentElement;
+            const isActive = parent.classList.contains('active');
+
+            document.querySelectorAll('.menu-with-submenu').forEach(otherMenu => {
+                if (otherMenu !== parent) {
+                    otherMenu.classList.remove('active');
+                }
+            });
+
+            parent.classList.toggle('active', !isActive);
+        });
+    });
+
+    const currentPath = window.location.pathname;
+    if (currentPath.includes('/importacao/') || currentPath.includes('/layout/') || currentPath.includes('/envio_arquivo')) {
+        const importMenu = document.querySelector('.menu-with-submenu');
+        if (importMenu) {
+            importMenu.classList.add('active');
+        }
+    }
+}
+
+// Debug detalhado â€” apenas no dashboard
 window.addEventListener('load', function () {
+    if (!isDashboardPage()) {
+        return;
+    }
+
     console.log("=== DEBUG COMPLETO DASHBOARD ===");
     console.log("cond_pag:", window.cond_pag);
     console.log("escol:", window.escol);
@@ -436,77 +481,4 @@ window.addEventListener('load', function () {
         key !== 'tableRoutes'
     );
     console.log("Variáveis disponíveis:", availableVars);
-});
-
-// Toggle submenu
-document.addEventListener('DOMContentLoaded', function () {
-    const menuWithSubmenu = document.querySelectorAll('.menu-with-submenu > a');
-
-    menuWithSubmenu.forEach(menu => {
-        menu.addEventListener('click', function (e) {
-            e.preventDefault();
-            const parent = this.parentElement;
-            const isActive = parent.classList.contains('active');
-
-            // Fechar todos os outros submenus
-            document.querySelectorAll('.menu-with-submenu').forEach(otherMenu => {
-                if (otherMenu !== parent) {
-                    otherMenu.classList.remove('active');
-                }
-            });
-
-            // Alternar o atual
-            parent.classList.toggle('active', !isActive);
-        });
-    });
-
-    // Manter submenu aberto se estiver em uma página filha
-    const currentPath = window.location.pathname;
-    if (currentPath.includes('/importacao/') || currentPath.includes('/envio_arquivo')) {
-        const importMenu = document.querySelector('.menu-with-submenu');
-        if (importMenu) {
-            importMenu.classList.add('active');
-        }
-
-    }
-    // Toggle submenu para Importação
-    document.addEventListener('DOMContentLoaded', function () {
-        const menuWithSubmenu = document.querySelectorAll('.menu-with-submenu > a');
-
-        menuWithSubmenu.forEach(menu => {
-            menu.addEventListener('click', function (e) {
-                e.preventDefault();
-                const parent = this.parentElement;
-                const isActive = parent.classList.contains('active');
-
-                // Fechar todos os outros submenus
-                document.querySelectorAll('.menu-with-submenu').forEach(otherMenu => {
-                    if (otherMenu !== parent) {
-                        otherMenu.classList.remove('active');
-                    }
-                });
-
-                // Alternar o atual
-                parent.classList.toggle('active', !isActive);
-            });
-        });
-
-        // Manter submenu aberto se estiver em uma página de importação
-        const currentPath = window.location.pathname;
-        if (currentPath.includes('/layout/') || currentPath.includes('/envio_arquivo')) {
-            const importMenu = document.querySelector('.menu-with-submenu');
-            if (importMenu) {
-                importMenu.classList.add('active');
-            }
-        }
-
-        // Fechar submenu ao clicar fora
-        document.addEventListener('click', function (e) {
-            if (!e.target.closest('.menu-with-submenu')) {
-                document.querySelectorAll('.menu-with-submenu').forEach(menu => {
-                    menu.classList.remove('active');
-                });
-            }
-        });
-    });
 });

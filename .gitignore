@@ -24,6 +24,7 @@ logs/
 *.log
 app.log
 uploads/
+temp/importacao_exports/
 *.tmp
 
 # IDE / OS

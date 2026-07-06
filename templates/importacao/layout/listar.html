@@ -1,86 +1,234 @@
 {% extends "base.html" %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/layouts.css') }}">
+{% endblock %}
+
 {% block content %}
-<div class="container">
-    <div class="page-header">
-        <h1>Gerenciar Layouts</h1>
-        <a href="{{ url_for('layout.novo_layout') }}" class="btn btn-primary">
+<div class="layouts-page">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="layouts-flash">
+        {% for category, message in messages %}
+        <div class="layouts-flash-item {{ category }}">
+            <i class="fas fa-{% if category == 'error' %}exclamation-circle{% elif category == 'success' %}check-circle{% else %}info-circle{% endif %}"></i>
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="layouts-hero">
+        <div class="layouts-hero-content">
+            <div class="layouts-hero-icon">
+                <i class="fas fa-table"></i>
+            </div>
+            <div>
+                <h1>Gerenciar Layouts</h1>
+                <p>Configure os modelos de colunas para validação de arquivos na importação. Cada layout define posição, tipo de dado e regras das colunas.</p>
+            </div>
+        </div>
+        <a href="{{ url_for('layout.novo_layout') }}" class="layouts-btn-primary">
             <i class="fas fa-plus"></i> Novo Layout
         </a>
     </div>
 
-    {% if layouts %}
-    <div class="table-responsive">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Nome</th>
-                    <th>Descrição</th>
-                    <th>Data Criação</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for layout in layouts %}
-                <tr>
-                    <td>{{ layout.LayoutID }}</td>
-                    <td>{{ layout.NomeLayout }}</td>
-                    <td>{{ layout.Descricao or '-' }}</td>
-                    <td>
-                        {% if layout.DataCriacao %}
-                            {% if layout.DataCriacao is string %}
-                                {{ layout.DataCriacao }}
-                            {% else %}
-                                {{ layout.DataCriacao.strftime('%d/%m/%Y %H:%M') }}
-                            {% endif %}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        <a href="{{ url_for('layout.editar_layout', layout_id=layout.LayoutID) }}" class="btn btn-sm btn-warning">
-                            <i class="fas fa-edit"></i> Editar
-                        </a>
-                        <button class="btn btn-sm btn-danger" onclick="excluirLayout({{ layout.LayoutID }})">
-                            <i class="fas fa-trash"></i> Excluir
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="layouts-stats">
+        <div class="layouts-stat-card">
+            <div class="layouts-stat-icon blue"><i class="fas fa-layer-group"></i></div>
+            <div>
+                <div class="layouts-stat-value" id="stat-total">{{ layouts|length }}</div>
+                <div class="layouts-stat-label">Layouts cadastrados</div>
+            </div>
+        </div>
+        <div class="layouts-stat-card">
+            <div class="layouts-stat-icon green"><i class="fas fa-columns"></i></div>
+            <div>
+                <div class="layouts-stat-value">{{ layouts|sum(attribute='TotalColunas')|default(0) }}</div>
+                <div class="layouts-stat-label">Colunas no total</div>
+            </div>
+        </div>
+        <div class="layouts-stat-card">
+            <div class="layouts-stat-icon purple"><i class="fas fa-file-upload"></i></div>
+            <div>
+                <div class="layouts-stat-value" style="font-size:1rem;padding-top:4px;">
+                    <a href="{{ url_for('importacao.index') }}" style="color:#9b59b6;text-decoration:none;font-weight:600;">Enviar arquivo →</a>
+                </div>
+                <div class="layouts-stat-label">Usar na importação</div>
+            </div>
+        </div>
     </div>
+
+    {% if layouts %}
+    <div class="layouts-toolbar">
+        <div class="layouts-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="busca-layout" placeholder="Buscar por nome ou descrição..." autocomplete="off">
+        </div>
+        <span class="layouts-count-label"><span id="count-visible">{{ layouts|length }}</span> de {{ layouts|length }} layout(s)</span>
+    </div>
+
+    <div class="layouts-grid" id="layouts-grid">
+        {% for layout in layouts %}
+        <article class="layout-card" data-search="{{ layout.NomeLayout|lower }} {{ (layout.Descricao or '')|lower }}">
+            <div class="layout-card-header">
+                <div class="layout-card-icon">
+                    <i class="fas fa-file-alt"></i>
+                </div>
+                <div class="layout-card-title">
+                    <h3 title="{{ layout.NomeLayout }}">{{ layout.NomeLayout }}</h3>
+                    <span class="layout-card-id">ID #{{ layout.LayoutID }}</span>
+                </div>
+            </div>
+            <div class="layout-card-body">
+                {% if layout.Descricao %}
+                <p class="layout-card-desc">{{ layout.Descricao }}</p>
+                {% else %}
+                <p class="layout-card-desc empty">Sem descrição</p>
+                {% endif %}
+            </div>
+            <div class="layout-card-meta">
+                <span class="layout-badge columns">
+                    <i class="fas fa-columns"></i>
+                    {{ layout.TotalColunas or 0 }} coluna(s)
+                </span>
+                <span class="layout-badge date">
+                    <i class="fas fa-calendar-alt"></i>
+                    {% if layout.DataCriacao %}
+                        {% if layout.DataCriacao is string %}
+                            {{ layout.DataCriacao }}
+                        {% else %}
+                            {{ layout.DataCriacao.strftime('%d/%m/%Y') }}
+                        {% endif %}
+                    {% else %}
+                        —
+                    {% endif %}
+                </span>
+                {% if layout.UsuarioCriacao %}
+                <span class="layout-badge user">
+                    <i class="fas fa-user"></i>
+                    {{ layout.UsuarioCriacao }}
+                </span>
+                {% endif %}
+            </div>
+            <div class="layout-card-actions">
+                <a href="{{ url_for('layout.editar_layout', layout_id=layout.LayoutID) }}" class="layout-btn-edit">
+                    <i class="fas fa-edit"></i> Editar
+                </a>
+                <button type="button" class="layout-btn-delete"
+                    data-id="{{ layout.LayoutID }}"
+                    data-nome="{{ layout.NomeLayout }}"
+                    onclick="abrirModalExcluir(this)">
+                    <i class="fas fa-trash"></i> Excluir
+                </button>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+
+    <div class="layouts-no-results" id="no-results">
+        <i class="fas fa-search" style="font-size:2rem;color:#dee2e6;margin-bottom:12px;display:block;"></i>
+        Nenhum layout encontrado para esta busca.
+    </div>
+
     {% else %}
-    <div class="alert alert-info">
-        Nenhum layout cadastrado. <a href="{{ url_for('layout.novo_layout') }}">Clique aqui</a> para criar o primeiro.
+    <div class="layouts-empty">
+        <div class="layouts-empty-icon">
+            <i class="fas fa-table"></i>
+        </div>
+        <h3>Nenhum layout cadastrado</h3>
+        <p>Crie seu primeiro layout para definir as colunas e regras de validação dos arquivos importados.</p>
+        <a href="{{ url_for('layout.novo_layout') }}" class="layouts-btn-primary">
+            <i class="fas fa-plus"></i> Criar primeiro layout
+        </a>
     </div>
     {% endif %}
 </div>
 
+<div class="layouts-modal-overlay" id="modal-excluir">
+    <div class="layouts-modal">
+        <div class="layouts-modal-icon"><i class="fas fa-trash-alt"></i></div>
+        <h3>Excluir layout?</h3>
+        <p>O layout <strong id="modal-nome-layout"></strong> será removido permanentemente, incluindo todas as colunas configuradas.</p>
+        <div class="layouts-modal-actions">
+            <button type="button" class="layouts-modal-cancel" onclick="fecharModalExcluir()">Cancelar</button>
+            <button type="button" class="layouts-modal-confirm" id="btn-confirmar-excluir">Excluir</button>
+        </div>
+    </div>
+</div>
+
 <script>
-function excluirLayout(layoutId) {
-    if (confirm('Tem certeza que deseja excluir este layout?')) {
-        fetch('{{ url_for("layout.excluir_layout", layout_id=0) }}'.replace('0', layoutId), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert(data.message);
-                location.reload();
-            } else {
-                alert(data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Erro:', error);
-            alert('Erro ao excluir layout');
+let layoutIdExcluir = null;
+
+function abrirModalExcluir(btn) {
+    layoutIdExcluir = btn.dataset.id;
+    document.getElementById('modal-nome-layout').textContent = btn.dataset.nome;
+    document.getElementById('modal-excluir').classList.add('active');
+}
+
+function fecharModalExcluir() {
+    layoutIdExcluir = null;
+    document.getElementById('modal-excluir').classList.remove('active');
+}
+
+document.getElementById('btn-confirmar-excluir').addEventListener('click', function() {
+    if (!layoutIdExcluir) return;
+
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Excluindo...';
+
+    fetch('{{ url_for("layout.excluir_layout", layout_id=0) }}'.replace('0', layoutIdExcluir), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message || 'Erro ao excluir layout');
+            btn.disabled = false;
+            btn.textContent = 'Excluir';
+        }
+    })
+    .catch(() => {
+        alert('Erro ao excluir layout');
+        btn.disabled = false;
+        btn.textContent = 'Excluir';
+    });
+});
+
+document.getElementById('modal-excluir').addEventListener('click', function(e) {
+    if (e.target === this) fecharModalExcluir();
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') fecharModalExcluir();
+});
+
+const buscaInput = document.getElementById('busca-layout');
+if (buscaInput) {
+    const cards = document.querySelectorAll('.layout-card');
+    const countVisible = document.getElementById('count-visible');
+    const noResults = document.getElementById('no-results');
+    const total = cards.length;
+
+    buscaInput.addEventListener('input', function() {
+        const termo = this.value.toLowerCase().trim();
+        let visiveis = 0;
+
+        cards.forEach(card => {
+            const match = !termo || (card.dataset.search || '').includes(termo);
+            card.style.display = match ? '' : 'none';
+            if (match) visiveis++;
         });
-    }
+
+        countVisible.textContent = visiveis;
+        noResults.classList.toggle('visible', visiveis === 0 && total > 0);
+    });
 }
 </script>
 {% endblock %}

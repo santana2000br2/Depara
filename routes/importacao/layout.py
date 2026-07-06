@@ -41,9 +41,10 @@ def listar_layouts():
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT LayoutID, NomeLayout, Descricao, DataCriacao, UsuarioCriacao
-            FROM Layouts 
-            ORDER BY DataCriacao DESC
+            SELECT l.LayoutID, l.NomeLayout, l.Descricao, l.DataCriacao, l.UsuarioCriacao,
+                   (SELECT COUNT(*) FROM LayoutColunas c WHERE c.LayoutID = l.LayoutID) AS TotalColunas
+            FROM Layouts l
+            ORDER BY l.DataCriacao DESC
         """)
         layouts = cursor.fetchall()
         
