@@ -3,6 +3,8 @@
 -- Staging : Arquivo_Forn_Cli_Endereco_Tratado
 -- Destino : PessoaEndereco_MG
 -- Procedure: up_02_Extrai_PessoaEndereco_gx (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE
@@ -25,20 +27,9 @@ DECLARE @CMD NVARCHAR(MAX)
 			PRINT 'O < '+ @BancoDadosGX +' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
 			RETURN
 		END
-	SELECT @CMD = N'
-		IF NOT EXISTS (
-			SELECT 1 FROM ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.sys.objects
-			WHERE type = ''U'' AND name = ''Arquivo_Forn_Cli_Endereco_Tratado''
-		)
-			SELECT @ok = 0
-		ELSE
-			SELECT @ok = 1
-	'
-	DECLARE @StagingOk BIT = 0
-	EXEC sp_executesql @CMD, N'@ok BIT OUTPUT', @ok = @StagingOk OUTPUT
-	IF @StagingOk = 0
-		BEGIN
-			PRINT 'O < ARQUIVO > INFORMADO NAO EXISTE NO BANCO '+ @BancoDadosGX +'!'
+	IF ( NOT EXISTS (SELECT 1 FROM SYS.OBJECTS WHERE NAME = 'Arquivo_Forn_Cli_Endereco_Tratado') )
+		BEGIN 
+			PRINT 'O < ARQUIVO > INFORMADO NAO EXISTE NESTE BANCO '+ @BancoDadosGX +'!'
 			RETURN
 		END
 -- ==========================================================================================
@@ -52,7 +43,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Forn_Cli_Endereco_Tratado SET
-		CPF_CNPJ = RTRIM(LTRIM(' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + '.dbo.fn_RemoveCaracteresNaoInteiros(CPF_CNPJ)))
+		CPF_CNPJ = rtrim(ltrim(dbo.FN_RemoveCaracteresNaoInteiros(CPF_CNPJ)))
 
 '
 
@@ -66,7 +57,7 @@ SELECT @CMD = '
 
 	IF(NOT EXISTS(SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects WHERE type = ''U'' AND name =''PessoaEndereco_MG''))
 	BEGIN
-		SELECT A.* INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEndereco_MG FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Forn_Cli_Endereco_Tratado a WHERE 1=1
+		SELECT A.*,1 as Flag INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEndereco_MG FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Forn_Cli_Endereco_Tratado a
 	END
 
 '

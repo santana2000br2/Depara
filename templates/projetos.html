@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gerenciar Projetos - DE x PARA</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -472,6 +472,103 @@
             margin-bottom: 0;
             cursor: pointer;
         }
+
+        .tipo-projeto-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .tipo-projeto-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .tipo-projeto-option:hover {
+            border-color: var(--accent-color);
+            background: #f0f8ff;
+        }
+
+        .tipo-projeto-option input {
+            width: auto;
+            margin: 0;
+        }
+
+        .fases-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .fase-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            background: #fff;
+        }
+
+        .fase-card h4 {
+            margin: 0 0 15px 0;
+            color: #495057;
+            font-size: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .fases-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .importacao-arquivo-box {
+            margin-top: 15px;
+            padding: 15px;
+            border: 1px dashed #3498db;
+            border-radius: 6px;
+            background: #f0f8ff;
+        }
+
+        .importacao-arquivo-hint {
+            margin: 8px 0 0 0;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .filtro-concluidos {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 16px 0;
+            padding: 10px 14px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            width: fit-content;
+            font-size: 0.95rem;
+            color: #495057;
+        }
+
+        .filtro-concluidos input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .filtro-concluidos label {
+            cursor: pointer;
+            margin: 0;
+            user-select: none;
+        }
+
+        tr.projeto-concluido {
+            background: #f1f3f5;
+            opacity: 0.85;
+        }
     </style>
 </head>
 <body>
@@ -491,6 +588,12 @@
             <button id="btnNovoProjeto" class="btn btn-new">
                 <i class="fas fa-plus"></i> Novo Projeto
             </button>
+        </div>
+
+        <div class="filtro-concluidos">
+            <input type="checkbox" id="chkMostrarConcluidos"
+                   {% if mostrar_concluidos %}checked{% endif %}>
+            <label for="chkMostrarConcluidos">Mostrar projetos concluídos</label>
         </div>
 
         <!-- Botões de Gerenciamento -->
@@ -520,6 +623,7 @@
                 <tr>
                     <th>ID</th>
                     <th>Nome do Projeto</th>
+                    <th>Tipo</th>
                     <th>Dados GX</th>
                     <th>Migrador</th>
                     <th>Líder do Projeto</th>
@@ -529,9 +633,16 @@
             </thead>
             <tbody id="projetosTableBody">
                 {% for projeto in projetos %}
-                <tr id="projeto-{{ projeto.ProjetoID }}">
+                <tr id="projeto-{{ projeto.ProjetoID }}" {% if projeto.Concluido %}class="projeto-concluido"{% endif %}>
                     <td>{{ projeto.ProjetoID }}</td>
                     <td>{{ projeto.NomeProjeto }}</td>
+                    <td>
+                        {% if projeto.TipoProjetoLabel %}
+                            <span class="badge badge-info">{{ projeto.TipoProjetoLabel }}</span>
+                        {% else %}
+                            <span class="badge badge-warning">Não definido</span>
+                        {% endif %}
+                    </td>
                     <td>{{ projeto.DadosGX }}</td>
                     <td>{{ projeto.migrador }}</td>
                     <td>{{ projeto.LiderProjeto }}</td>
@@ -561,7 +672,7 @@
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2 id="modalTitle">Adicionar Projeto</h2>
-            <form id="projetoForm">
+            <form id="projetoForm" autocomplete="off">
                 <input type="hidden" id="projeto_id" name="projeto_id" value="">
                 
                 <!-- CAMPOS GERAIS -->
@@ -576,6 +687,59 @@
                     <div class="form-group required-field">
                         <label for="dados_gx">Dados GX:</label>
                         <input type="text" id="dados_gx" name="dados_gx" required>
+                    </div>
+                </div>
+
+                <!-- TIPO DE PROJETO -->
+                <div class="form-section">
+                    <h3><i class="fas fa-flag"></i> Tipo de Projeto</h3>
+                    <div class="tipo-projeto-options">
+                        {% for key, label in tipos_projeto.items() %}
+                        <label class="tipo-projeto-option" for="tipo-{{ key }}">
+                            <input type="radio" name="tipo_projeto" value="{{ key }}" id="tipo-{{ key }}">
+                            <span>{{ label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+
+                    <div id="secaoImportacaoArquivo" class="importacao-arquivo-box" style="display: none;">
+                        <div class="form-check">
+                            <input type="checkbox" id="importacao_liberada" name="importacao_liberada">
+                            <label for="importacao_liberada">Importação Liberada</label>
+                        </div>
+                        <p class="importacao-arquivo-hint">
+                            <i class="fas fa-info-circle"></i>
+                            Disponível apenas para projetos do tipo Arquivo X Workflow.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- FASES DO PROJETO -->
+                <div class="form-section">
+                    <h3><i class="fas fa-calendar-alt"></i> Fases do Projeto</h3>
+                    <div class="fases-grid">
+                        <div class="fase-card">
+                            <h4>Fase 1</h4>
+                            <div class="form-group">
+                                <label for="fase1_data_inicio">Data de início:</label>
+                                <input type="date" id="fase1_data_inicio" name="fase1_data_inicio">
+                            </div>
+                            <div class="form-group">
+                                <label for="fase1_data_termino">Data de término:</label>
+                                <input type="date" id="fase1_data_termino" name="fase1_data_termino">
+                            </div>
+                        </div>
+                        <div class="fase-card">
+                            <h4>Fase 2</h4>
+                            <div class="form-group">
+                                <label for="fase2_data_inicio">Data de início:</label>
+                                <input type="date" id="fase2_data_inicio" name="fase2_data_inicio">
+                            </div>
+                            <div class="form-group">
+                                <label for="fase2_data_termino">Data de término:</label>
+                                <input type="date" id="fase2_data_termino" name="fase2_data_termino">
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -602,10 +766,11 @@
                     
                     <div class="form-group password-toggle">
                         <label for="senhaproducao">Senha de Produção:</label>
-                        <input type="password" id="senhaproducao" name="senhaproducao">
+                        <input type="password" id="senhaproducao" name="senhaproducao" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
                         <span class="toggle-icon" id="toggleSenhaProducao">
                             <i class="fas fa-eye"></i>
                         </span>
+                        <small id="hint_senhaproducao" class="form-hint" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
                     </div>
                 </div>
 
@@ -632,10 +797,11 @@
                     
                     <div class="form-group password-toggle">
                         <label for="senhahomologacao">Senha de Homologação:</label>
-                        <input type="password" id="senhahomologacao" name="senhahomologacao">
+                        <input type="password" id="senhahomologacao" name="senhahomologacao" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
                         <span class="toggle-icon" id="toggleSenhaHomologacao">
                             <i class="fas fa-eye"></i>
                         </span>
+                        <small id="hint_senhahomologacao" class="form-hint" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
                     </div>
                 </div>
 
@@ -711,12 +877,40 @@
     const projetoIdField = document.getElementById('projeto_id');
     const alertMessage = document.getElementById('alertMessage');
     const btnFecharModal = document.getElementById('btnFecharModal');
+    const chkMostrarConcluidos = document.getElementById('chkMostrarConcluidos');
+
+    if (chkMostrarConcluidos) {
+        chkMostrarConcluidos.addEventListener('change', function () {
+            const url = new URL(window.location.href);
+            if (this.checked) {
+                url.searchParams.set('mostrar_concluidos', '1');
+            } else {
+                url.searchParams.delete('mostrar_concluidos');
+            }
+            window.location.href = url.toString();
+        });
+    }
     
     // Toggles para mostrar/ocultar senhas
     const toggleSenhaProducao = document.getElementById('toggleSenhaProducao');
     const senhaProducaoField = document.getElementById('senhaproducao');
     const toggleSenhaHomologacao = document.getElementById('toggleSenhaHomologacao');
     const senhaHomologacaoField = document.getElementById('senhahomologacao');
+    const secaoImportacaoArquivo = document.getElementById('secaoImportacaoArquivo');
+    const importacaoLiberadaField = document.getElementById('importacao_liberada');
+
+    function atualizarSecaoImportacaoArquivo() {
+        const tipo = document.querySelector('input[name="tipo_projeto"]:checked')?.value || '';
+        const exibir = tipo === 'arquivo_workflow';
+        secaoImportacaoArquivo.style.display = exibir ? 'block' : 'none';
+        if (!exibir) {
+            importacaoLiberadaField.checked = false;
+        }
+    }
+
+    document.querySelectorAll('input[name="tipo_projeto"]').forEach((radio) => {
+        radio.addEventListener('change', atualizarSecaoImportacaoArquivo);
+    });
 
     // Toggle para senha de produção
     toggleSenhaProducao.addEventListener('click', function() {
@@ -737,6 +931,7 @@
         modalTitle.textContent = 'Adicionar Projeto';
         form.reset();
         projetoIdField.value = '';
+        atualizarSecaoImportacaoArquivo();
         modal.style.display = 'block';
     }
 
@@ -782,13 +977,17 @@
                     document.getElementById('bancoProducao').value = projeto.bancoProducao || '';
                     document.getElementById('servidorproducao').value = projeto.servidorproducao || '';
                     document.getElementById('usuarioProducao').value = projeto.usuarioProducao || '';
-                    document.getElementById('senhaproducao').value = projeto.senhaproducao || '';
+                    document.getElementById('senhaproducao').value = '';
+                    const hintProd = document.getElementById('hint_senhaproducao');
+                    if (hintProd) hintProd.style.display = projeto.senhaproducao_configurada ? 'block' : 'none';
                     
                     // Campos de homologação
                     document.getElementById('banco_homo').value = projeto.BancoHomo || '';
                     document.getElementById('servidorhomologacao').value = projeto.servidorhomologacao || '';
                     document.getElementById('usuariohomologacao').value = projeto.usuariohomologacao || '';
-                    document.getElementById('senhahomologacao').value = projeto.senhahomologacao || '';
+                    document.getElementById('senhahomologacao').value = '';
+                    const hintHomo = document.getElementById('hint_senhahomologacao');
+                    if (hintHomo) hintHomo.style.display = projeto.senhahomologacao_configurada ? 'block' : 'none';
                     
                     // Informações da equipe
                     document.getElementById('ponto_focal').value = projeto.PontoFocal || '';
@@ -796,6 +995,18 @@
                     document.getElementById('lider_projeto').value = projeto.LiderProjeto || '';
                     document.getElementById('migrador').value = projeto.migrador || '';
                     document.getElementById('concluido').checked = !!projeto.Concluido;
+
+                    const tipoSelecionado = projeto.TipoProjeto || '';
+                    document.querySelectorAll('input[name="tipo_projeto"]').forEach((radio) => {
+                        radio.checked = radio.value === tipoSelecionado;
+                    });
+                    importacaoLiberadaField.checked = !!projeto.ImportacaoLiberada;
+                    atualizarSecaoImportacaoArquivo();
+
+                    document.getElementById('fase1_data_inicio').value = projeto.Fase1DataInicio || '';
+                    document.getElementById('fase1_data_termino').value = projeto.Fase1DataTermino || '';
+                    document.getElementById('fase2_data_inicio').value = projeto.Fase2DataInicio || '';
+                    document.getElementById('fase2_data_termino').value = projeto.Fase2DataTermino || '';
 
                     const tiposSelecionados = projeto.TiposEscopo || [];
                     document.querySelectorAll('input[name="tipos_escopo"]').forEach((checkbox) => {
@@ -875,6 +1086,12 @@
         const formData = {
             tipos_escopo: Array.from(document.querySelectorAll('input[name="tipos_escopo"]:checked'))
                 .map((checkbox) => checkbox.value),
+            tipo_projeto: document.querySelector('input[name="tipo_projeto"]:checked')?.value || '',
+            importacao_liberada: importacaoLiberadaField.checked,
+            fase1_data_inicio: document.getElementById('fase1_data_inicio').value,
+            fase1_data_termino: document.getElementById('fase1_data_termino').value,
+            fase2_data_inicio: document.getElementById('fase2_data_inicio').value,
+            fase2_data_termino: document.getElementById('fase2_data_termino').value,
             nome_projeto: nomeProjeto,
             dados_gx: dadosGX,
             
@@ -924,10 +1141,10 @@
         .then(data => {
             showAlert(data.message, data.status === 'success');
             if (data.status === 'success') {
-                submitButton.innerHTML = originalButtonText;
-                submitButton.disabled = false;
+                // Fecha o modal e recarrega a lista — evita gravar duas vezes
+                modal.style.display = 'none';
+                setTimeout(() => location.reload(), 600);
             } else {
-                // Reativar botão em caso de erro
                 submitButton.innerHTML = originalButtonText;
                 submitButton.disabled = false;
             }

@@ -19,15 +19,44 @@ class Config:
     
     # Outras configurações
     SECRET_KEY = os.getenv("SECRET_KEY", "chave-secreta-padrao")
+    # Chave Fernet (url-safe base64) para cifrar senhas de projeto/SMTP no banco.
+    # Gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    CREDENTIALS_KEY = os.getenv("CREDENTIALS_KEY", "")
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
-    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", "268435456"))  # 256MB
+    # Mínimo 256 MB — evita worker IIS com .env antigo (16 MB) até reiniciar o pool
+    MAX_CONTENT_LENGTH = max(
+        int(os.getenv("MAX_CONTENT_LENGTH", "268435456")),
+        268435456,
+    )
+
+    # Google reCAPTCHA v2 (login). Sem as duas chaves, o captcha fica desligado.
+    RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "")
+    RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "")
     
     # Configurações de Log
     LOG_FILE = os.getenv("LOG_FILE", "logs/app.log")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+    # SMTP padrão (fallback quando o projeto não tiver configuração própria)
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM = os.getenv("SMTP_FROM", "")
+    SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes", "sim")
+
+    # URL pública do sistema (links de e-mail). Ex.: https://servidor/Depara_Novo
+    # Se vazio, usa a URL da requisição atual.
+    BASE_URL = (os.getenv("BASE_URL") or "").rstrip("/")
+
     SECRET_KEY = os.getenv("SECRET_KEY", "chave-secreta-fallback")
 
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_SAMESITE = 'None'
+    # Cookies de sessão (OWASP): Secure + HttpOnly + SameSite=Lax (first-party).
+    # SameSite=None só é necessário em cenários cross-site reais e exige Secure.
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() in (
+        "1", "true", "yes", "on", "sim",
+    )
     SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+    SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "depara_session")
+    PREFERRED_URL_SCHEME = os.getenv("PREFERRED_URL_SCHEME", "https")

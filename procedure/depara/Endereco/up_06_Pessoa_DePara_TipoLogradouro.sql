@@ -3,6 +3,8 @@
 -- Destino : TipoLogradouro_DePara
 -- Procedure: up_06_Pessoa_DePara_TipoLogradouro
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

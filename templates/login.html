@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Autenticação</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    {% if recaptcha_ativo %}
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    {% endif %}
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -20,7 +23,7 @@
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            width: 300px;
+            width: 340px;
         }
         h2 {
             text-align: center;
@@ -37,7 +40,8 @@
             font-weight: bold;
         }
         input[type="text"],
-        input[type="password"] {
+        input[type="password"],
+        input[type="number"] {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -46,9 +50,42 @@
             font-size: 14px;
         }
         input[type="text"]:focus,
-        input[type="password"]:focus {
+        input[type="password"]:focus,
+        input[type="number"]:focus {
             border-color: #007bff;
             outline: none;
+        }
+        .g-recaptcha {
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: center;
+        }
+        .captcha-local {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+        .captcha-img-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 8px 0 10px;
+        }
+        .captcha-img {
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: #fff;
+        }
+        .captcha-refresh {
+            color: #007bff;
+            font-size: 18px;
+            text-decoration: none;
+            padding: 8px;
+        }
+        .captcha-refresh:hover {
+            color: #0056b3;
         }
         button {
             width: 100%;
@@ -96,6 +133,17 @@
             margin: 5px 0 0 0;
             font-size: 14px;
         }
+        .forgot-link {
+            display: block;
+            text-align: center;
+            margin-top: 14px;
+            color: #007bff;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .forgot-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -106,18 +154,38 @@
         </div>
         
         <h2>Login</h2>
-        <form method="POST" action="{{ url_for('auth.login') }}">
+        <form method="POST" action="{{ url_for('auth.login') }}" autocomplete="off">
             <div class="form-group">
                 <label for="username"><i class="fas fa-user"></i> Usuário:</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
+                <input type="text" id="username" name="username" required autocomplete="off">
             </div>
             <div class="form-group">
                 <label for="password"><i class="fas fa-lock"></i> Senha:</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <input type="password" id="password" name="password" required autocomplete="new-password">
             </div>
+            {% if recaptcha_ativo %}
+            <div class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}"></div>
+            {% elif captcha_local %}
+            <div class="captcha-local">
+                <label for="captcha_resposta"><i class="fas fa-shield-alt"></i> Digite os caracteres da imagem:</label>
+                <div class="captcha-img-wrap">
+                    <img src="{{ captcha_local.imagem }}" alt="Captcha" class="captcha-img" width="180" height="60">
+                    <a href="{{ url_for('auth.login') }}" class="captcha-refresh" title="Gerar nova imagem">
+                        <i class="fas fa-sync-alt"></i>
+                    </a>
+                </div>
+                <input type="hidden" name="captcha_token" value="{{ captcha_local.token }}">
+                <input type="text" id="captcha_resposta" name="captcha_resposta" required
+                       autocomplete="off" maxlength="8" placeholder="Código da imagem"
+                       style="text-transform: uppercase;">
+            </div>
+            {% endif %}
             <button type="submit">
                 <i class="fas fa-sign-in-alt"></i> Entrar
             </button>
+            <a class="forgot-link" href="{{ url_for('auth.recuperar_senha') }}">
+                Esqueci minha senha
+            </a>
             
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}

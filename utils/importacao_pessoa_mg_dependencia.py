@@ -22,12 +22,31 @@ from utils.importacao_procedures import CONFIG_PROCEDURES
 from utils.layout_validation import (
     _ordenar_colunas_layout,
     cpf_cnpj_eh_placeholder,
+    cpf_cnpj_eh_consumidor,
     normalizar_texto_campo,
 )
 
-LAYOUTS_DEPENDEM_PESSOA_MG = frozenset(
-    k for k in CONFIG_PROCEDURES if k != 'forn_cli'
-)
+LAYOUTS_DEPENDEM_PESSOA_MG = frozenset({
+    'forn_cli_documento',
+    'forn_cli_endereco',
+    'forn_cli_enquadramento',
+    'forn_cli_telefone',
+    'forn_cli_contato',
+    'forn_cli_conjuge',
+    'forn_cli_dados_bancarios',
+    'movimento_estoque',
+    'veiculo',
+    'financeiro',
+    'adiantamento',
+    'fseg_cab',
+})
+
+# Layouts em que o CPF/CNPJ é opcional (ex.: proprietário do Veículo).
+# A ausência em Pessoa_MG gera AVISO (não bloqueia importação): o registro
+# é importado mesmo assim, apenas sem o vínculo com a pessoa.
+LAYOUTS_PESSOA_MG_OPCIONAL = frozenset({
+    'veiculo',
+})
 
 # Sufixo no nome do layout → tipo (forn_cli_*)
 _SUFIXOS_LAYOUT = {
@@ -43,21 +62,42 @@ _SUFIXOS_LAYOUT = {
 
 
 def detectar_tipo_layout(nome_layout, descricao=None, colunas=None):
-    """Identifica o tipo de layout Forn_cli (principal ou secundário)."""
-    if layout_eh_forn_cli(nome_layout, descricao, colunas):
-        return 'forn_cli'
+    """Identifica o tipo de layout Forn_cli (principal ou secundário) e demais com CPF/CNPJ."""
+    from utils.importacao_forn_cli_endereco import layout_eh_forn_cli_endereco
+    from utils.importacao_movimento_estoque import layout_eh_movimento_estoque
+    from utils.importacao_financeiro import layout_eh_financeiro
+
+    if layout_eh_forn_cli_endereco(nome_layout, descricao, colunas):
+        return 'forn_cli_endereco'
     if layout_eh_forn_cli_documento(nome_layout, descricao, colunas):
         return 'forn_cli_documento'
     if layout_eh_forn_cli_enquadramento(nome_layout, descricao, colunas):
         return 'forn_cli_enquadramento'
+    if layout_eh_movimento_estoque(nome_layout, descricao, colunas):
+        return 'movimento_estoque'
+    if layout_eh_financeiro(nome_layout, descricao, colunas):
+        return 'financeiro'
 
     for texto in (nome_layout, descricao):
         nome = _normalizar_nome_layout(texto)
         if not nome or nome == 'forn_cli':
             continue
+        chave = nome.replace('_', '')
+        if chave == 'veiculo' or (nome.startswith('veiculo') and 'veiculoano' not in chave):
+            return 'veiculo'
+        if 'adiantamento' in chave:
+            return 'adiantamento'
+        if 'financeiro' in chave:
+            return 'financeiro'
+        if 'fseg' in chave:
+            # Só Fseg_Cab depende de Pessoa_MG; Prd/Srv usam CHASSI/produto.
+            if 'prd' in chave or 'srv' in chave or 'fichaprd' in chave or 'fichasrv' in chave:
+                return None
+            if 'cab' in chave or 'fichacab' in chave or chave in ('fseg', 'fichaseg'):
+                return 'fseg_cab'
         for sufixo, tipo in _SUFIXOS_LAYOUT.items():
-            chave = sufixo.replace('_', '')
-            if sufixo in nome or f'forn_cli_{sufixo}' in nome or chave in nome.replace('_', ''):
+            sufixo_chave = sufixo.replace('_', '')
+            if sufixo in nome or f'forn_cli_{sufixo}' in nome or sufixo_chave in chave:
                 return tipo
 
     if colunas:
@@ -66,6 +106,19 @@ def detectar_tipo_layout(nome_layout, descricao=None, colunas=None):
             for c in colunas
             if (c.get('Descricao') if isinstance(c, dict) else c)
         }
+        if {'NUMERO_OS', 'CODIGO_VEICULO', 'CPF_CNPJ'}.issubset(nomes):
+            if 'PRODUTO_REFERENCIA' not in nomes and 'PRODUTO_QUANTIDADE' not in nomes:
+                return 'fseg_cab'
+        if {'CODIGO_VEICULO', 'CHASSI', 'CNPJ_EMPRESA'}.issubset(nomes):
+            if 'NUMERO_OS' in nomes and (
+                'PRODUTO_REFERENCIA' in nomes or 'TMO_REFERENCIA' in nomes
+            ):
+                return None  # Fseg_Prd/Srv — não depende de Pessoa_MG
+            return 'veiculo'
+        if {'TIPO_MOVFINANCEIRO', 'TITULO_VALOR', 'CPF_CNPJ', 'CNPJ_EMPRESA'}.issubset(nomes):
+            return 'financeiro'
+        if {'TIPO_FICHARAZAO', 'VALOR_SALDO', 'CPF_CNPJ', 'CNPJ_EMPRESA'}.issubset(nomes):
+            return 'adiantamento'
         if 'CPF_CNPJ' in nomes and 'CODIGO_PESSOA' not in nomes and 'NOME' not in nomes:
             if 'INSC_ESTADUAL' in nomes:
                 return 'forn_cli_documento'
@@ -78,6 +131,9 @@ def detectar_tipo_layout(nome_layout, descricao=None, colunas=None):
             if 'NOME_CONTATO' in nomes:
                 return 'forn_cli_contato'
 
+    if layout_eh_forn_cli(nome_layout, descricao, colunas):
+        return 'forn_cli'
+
     return None
 
 
@@ -86,16 +142,40 @@ def layout_depende_pessoa_mg(nome_layout, descricao=None, colunas=None):
     return tipo in LAYOUTS_DEPENDEM_PESSOA_MG if tipo else False
 
 
+def pessoa_mg_dependencia_opcional(nome_layout, descricao=None, colunas=None):
+    """True quando o CPF/CNPJ é opcional e a ausência em Pessoa_MG deve ser só aviso."""
+    tipo = detectar_tipo_layout(nome_layout, descricao, colunas)
+    return tipo in LAYOUTS_PESSOA_MG_OPCIONAL if tipo else False
+
+
 def normalizar_cpf_cnpj_chave(valor):
-    """Normaliza CPF/CNPJ para comparação (somente dígitos, zeros à esquerda)."""
-    digitos = re.sub(r'\D', '', normalizar_texto_campo(valor))
-    if not digitos or cpf_cnpj_eh_placeholder(digitos):
+    """
+    Normaliza CPF/CNPJ para comparação (somente dígitos, zeros à esquerda).
+
+    Retorna None quando o valor não tem cara de CPF/CNPJ (contém letras ou
+    quantidade implausível de dígitos), evitando acusar como "CPF/CNPJ não
+    encontrado" valores de outras colunas (data, placa, chassi, RENAVAM, etc.).
+    """
+    texto = normalizar_texto_campo(valor)
+    if not texto:
         return None
+
+    # Valores com letras não são CPF/CNPJ (ex.: chassi, placa, RENAVAM alfanumérico).
+    if re.search(r'[A-Za-z]', texto):
+        return None
+
+    digitos = re.sub(r'\D', '', texto)
+    if not digitos or cpf_cnpj_eh_consumidor(digitos) or cpf_cnpj_eh_placeholder(digitos):
+        return None
+
+    # Fora da faixa de um CPF (11) ou CNPJ (14): evita ler datas/placas na coluna errada.
+    # Tolera perda de alguns zeros à esquerda (>= 9 dígitos).
+    if len(digitos) < 9 or len(digitos) > 14:
+        return None
+
     if len(digitos) <= 11:
         return digitos.zfill(11)
-    if len(digitos) <= 14:
-        return digitos.zfill(14)
-    return digitos
+    return digitos.zfill(14)
 
 
 def _variantes_chave_cpf(chave):
@@ -160,6 +240,9 @@ def _cpf_linha(campos, idx_cpf):
     return normalizar_texto_campo(campos[idx_cpf])
 
 
+MAX_ERROS_DEPENDENCIA_LISTADOS = 500
+
+
 def validar_linhas_dependem_pessoa_mg(linhas_campos, layout_colunas, cpfs_pessoa_mg, pessoa_mg_existe=True):
     """
     Erros bloqueantes por linha quando CPF/CNPJ não está em Pessoa_MG.
@@ -189,6 +272,7 @@ def validar_linhas_dependem_pessoa_mg(linhas_campos, layout_colunas, cpfs_pessoa
         })
         return erros
 
+    total_faltantes = 0
     for linha_idx, campos in enumerate(linhas_campos):
         linha_num = linha_idx + 1
         cpf_bruto = _cpf_linha(campos, idx_cpf)
@@ -197,6 +281,9 @@ def validar_linhas_dependem_pessoa_mg(linhas_campos, layout_colunas, cpfs_pessoa
             continue
 
         if not cpf_existe_em_pessoa_mg(chave, cpfs_pessoa_mg):
+            total_faltantes += 1
+            if len(erros) >= MAX_ERROS_DEPENDENCIA_LISTADOS:
+                continue
             lido = cpf_bruto or '(vazio)'
             erros.append({
                 'Linha': linha_num,
@@ -206,6 +293,17 @@ def validar_linhas_dependem_pessoa_mg(linhas_campos, layout_colunas, cpfs_pessoa
                     'Importe o cadastro principal (1 Forn_cli.txt) antes deste layout.'
                 ),
             })
+
+    if total_faltantes > len(erros):
+        extras = total_faltantes - len(erros)
+        erros.append({
+            'Linha': 0,
+            'Coluna': '(Pessoa_MG)',
+            'Erro': (
+                f"Mais {extras} linha(s) com CPF/CNPJ não cadastrado em Pessoa_MG "
+                f"(total: {total_faltantes}; exibindo até {MAX_ERROS_DEPENDENCIA_LISTADOS})."
+            ),
+        })
 
     return erros
 
@@ -243,6 +341,72 @@ def validar_dependencia_pessoa_mg(linhas_campos, layout_colunas, layout_nome, la
     finally:
         cursor.close()
         conn.close()
+
+
+def avisar_dependencia_pessoa_mg_opcional(linhas_campos, layout_colunas, layout_nome, layout_descricao=None, banco_gx=None):
+    """
+    Avisos (não bloqueantes) para layouts com CPF/CNPJ opcional (ex.: proprietário de Veículo).
+
+    Aponta apenas CPF/CNPJ preenchidos que não existem em Pessoa_MG — o registro
+    é importado mesmo assim, sem o vínculo de pessoa. Não bloqueia a importação.
+    """
+    if not pessoa_mg_dependencia_opcional(layout_nome, layout_descricao, layout_colunas):
+        return []
+    if not banco_gx:
+        return []
+
+    from db.connection import conectar_segunda_base
+
+    banco_gx = _validar_identificador_sql(banco_gx.strip())
+    conn = conectar_segunda_base(banco_gx)
+    if not conn:
+        return []
+
+    cursor = conn.cursor()
+    try:
+        if not _tabela_existe(cursor, TABELA_PESSOA_MG):
+            return []
+        cpfs = carregar_cpfs_pessoa_mg(cursor)
+    finally:
+        cursor.close()
+        conn.close()
+
+    if not cpfs:
+        return []
+
+    idx_cpf, rotulo_cpf = _indice_cpf_layout(layout_colunas)
+    avisos = []
+    total_faltantes = 0
+    for linha_idx, campos in enumerate(linhas_campos):
+        cpf_bruto = _cpf_linha(campos, idx_cpf)
+        chave = normalizar_cpf_cnpj_chave(cpf_bruto)
+        if not chave:
+            continue
+        if not cpf_existe_em_pessoa_mg(chave, cpfs):
+            total_faltantes += 1
+            if len(avisos) >= MAX_ERROS_DEPENDENCIA_LISTADOS:
+                continue
+            avisos.append({
+                'Linha': linha_idx + 1,
+                'Coluna': rotulo_cpf,
+                'Aviso': (
+                    f"CPF/CNPJ '{cpf_bruto}' não está em Pessoa_MG — "
+                    "o registro será importado sem vínculo de pessoa (proprietário)."
+                ),
+            })
+
+    if total_faltantes > len(avisos):
+        extras = total_faltantes - len(avisos)
+        avisos.append({
+            'Linha': 0,
+            'Coluna': rotulo_cpf,
+            'Aviso': (
+                f"Mais {extras} linha(s) com CPF/CNPJ fora de Pessoa_MG "
+                f"(total: {total_faltantes})."
+            ),
+        })
+
+    return avisos
 
 
 def validar_dataframe_depende_pessoa_mg(cursor, df, layout_nome=None, layout_descricao=None, colunas_layout=None):

@@ -111,8 +111,8 @@ def importar_forn_cli_endereco_para_base(df, banco_gx, banco_wf=None):
         msg = (
             f"Importação concluída em {banco_gx}.dbo.{TABELA_DESTINO} "
             f"(procedure {resumo['procedure']}): "
-            f"{resumo['total']} registro(s), {resumo['flag_1']} apto(s) (Flag=1), "
-            f"{resumo['flag_0']} com ocorrência(s) (Flag=0)."
+            f"{resumo['total']} registro(s), {resumo['flag_1']} importado(s) OK, "
+            f"{resumo['flag_0']} rejeitado(s)."
         )
         return True, msg, resumo
     except Exception as e:

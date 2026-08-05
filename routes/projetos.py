@@ -1,6 +1,11 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, session, request, jsonify
 from db.connection import conectar_banco
 from logger import logger
+from utils.credential_crypto import (
+    criptografar_segredo,
+    descriptografar_segredo,
+    esta_criptografado,
+)
 
 projetos_bp = Blueprint("projetos", __name__)
 
@@ -15,6 +20,157 @@ TIPOS_ESCOPO = {
     "GERAL": "Geral"
 }
 
+TIPOS_PROJETO = {
+    "windows_workflow": "Windows X Workflow",
+    "workflow_workflow": "Workflow X Workflow",
+    "arquivo_workflow": "Arquivo X Workflow",
+}
+
+
+def _format_date(val):
+    if val is None:
+        return ''
+    if hasattr(val, 'strftime'):
+        return val.strftime('%Y-%m-%d')
+    return str(val)[:10]
+
+
+def _parse_date(val):
+    if not val or not str(val).strip():
+        return None
+    return str(val).strip()[:10]
+
+
+def _tipo_projeto_codigo(row):
+    """Retorna o código do tipo a partir das flags do banco."""
+    if getattr(row, 'TipoWindowsWorkflow', None):
+        return 'windows_workflow'
+    if getattr(row, 'TipoWorkflowWorkflow', None):
+        return 'workflow_workflow'
+    if getattr(row, 'TipoArquivoWorkflow', None):
+        return 'arquivo_workflow'
+    return ''
+
+
+def _tipo_projeto_label(codigo):
+    return TIPOS_PROJETO.get(codigo, '')
+
+
+def _flags_tipo_projeto(tipo_codigo):
+    return {
+        'TipoWindowsWorkflow': 1 if tipo_codigo == 'windows_workflow' else 0,
+        'TipoWorkflowWorkflow': 1 if tipo_codigo == 'workflow_workflow' else 0,
+        'TipoArquivoWorkflow': 1 if tipo_codigo == 'arquivo_workflow' else 0,
+    }
+
+
+def _projeto_para_dict(projeto):
+    tipo_codigo = _tipo_projeto_codigo(projeto)
+    return {
+        'ProjetoID': projeto.ProjetoID,
+        'NomeProjeto': projeto.NomeProjeto,
+        'DadosGX': projeto.DadosGX,
+        'servidorproducao': projeto.servidorproducao,
+        # Usuários DB: descriptografados só para a tela admin
+        'usuarioProducao': descriptografar_segredo(projeto.usuarioProducao) or '',
+        # Nunca devolver senha em claro/cifrada à UI — só flags
+        'senhaproducao': '',
+        'senhaproducao_configurada': bool(getattr(projeto, 'senhaproducao', None)),
+        'servidorhomologacao': projeto.servidorhomologacao,
+        'usuariohomologacao': descriptografar_segredo(projeto.usuariohomologacao) or '',
+        'senhahomologacao': '',
+        'senhahomologacao_configurada': bool(getattr(projeto, 'senhahomologacao', None)),
+        'BancoHomo': projeto.BancoHomo,
+        'PontoFocal': projeto.PontoFocal,
+        'ConsultorLider': projeto.ConsultorLider,
+        'LiderProjeto': projeto.LiderProjeto,
+        'migrador': projeto.migrador,
+        'bancoProducao': projeto.bancoProducao,
+        'Concluido': bool(projeto.Concluido),
+        'TipoProjeto': tipo_codigo,
+        'TipoProjetoLabel': _tipo_projeto_label(tipo_codigo),
+        'TipoWindowsWorkflow': bool(getattr(projeto, 'TipoWindowsWorkflow', False)),
+        'TipoWorkflowWorkflow': bool(getattr(projeto, 'TipoWorkflowWorkflow', False)),
+        'TipoArquivoWorkflow': bool(getattr(projeto, 'TipoArquivoWorkflow', False)),
+        'Fase1DataInicio': _format_date(getattr(projeto, 'Fase1DataInicio', None)),
+        'Fase1DataTermino': _format_date(getattr(projeto, 'Fase1DataTermino', None)),
+        'Fase2DataInicio': _format_date(getattr(projeto, 'Fase2DataInicio', None)),
+        'Fase2DataTermino': _format_date(getattr(projeto, 'Fase2DataTermino', None)),
+        'ImportacaoLiberada': bool(getattr(projeto, 'ImportacaoLiberada', False)),
+    }
+
+
+def _garantir_colunas_senha_largas(cursor):
+    """Token Fernet cabe em NVARCHAR(500); amplia colunas curtas se necessário."""
+    for coluna in (
+        "senhaproducao",
+        "senhahomologacao",
+        "usuarioProducao",
+        "usuariohomologacao",
+    ):
+        try:
+            cursor.execute(
+                """
+                SELECT CHARACTER_MAXIMUM_LENGTH
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'Projeto' AND COLUMN_NAME = ?
+                """,
+                (coluna,),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None and 0 < row[0] < 500:
+                cursor.execute(
+                    f"ALTER TABLE Projeto ALTER COLUMN {coluna} NVARCHAR(500) NULL"
+                )
+                logger.info("Coluna Projeto.%s ampliada para NVARCHAR(500)", coluna)
+        except Exception as exc:
+            logger.warning("Não foi possível ajustar coluna %s: %s", coluna, exc)
+
+
+def _cifrar_usuario_db(valor):
+    texto = (valor or "").strip()
+    if not texto:
+        return None
+    return criptografar_segredo(texto)
+
+
+def _resolver_senha_para_gravar(nova_senha, senha_atual_banco):
+    """Cifra senha nova; se vazia na edição, mantém a já gravada."""
+    if nova_senha is None:
+        nova_senha = ""
+    nova_senha = str(nova_senha).strip()
+    if nova_senha:
+        return criptografar_segredo(nova_senha)
+    return senha_atual_banco
+
+
+_COLUNAS_PROJETO_SELECT = """
+    ProjetoID,
+    NomeProjeto,
+    DadosGX,
+    servidorproducao,
+    usuarioProducao,
+    senhaproducao,
+    servidorhomologacao,
+    usuariohomologacao,
+    senhahomologacao,
+    BancoHomo,
+    PontoFocal,
+    ConsultorLider,
+    LiderProjeto,
+    migrador,
+    bancoProducao,
+    Concluido,
+    TipoWindowsWorkflow,
+    TipoWorkflowWorkflow,
+    TipoArquivoWorkflow,
+    Fase1DataInicio,
+    Fase1DataTermino,
+    Fase2DataInicio,
+    Fase2DataTermino,
+    ImportacaoLiberada
+"""
+
 @projetos_bp.route("/gerenciar_projetos")
 def gerenciar_projetos():
     if "usuario" not in session or not session["usuario"].get("adm"):
@@ -27,71 +183,58 @@ def gerenciar_projetos():
         conn = conectar_banco()
         if not conn:
             flash("Erro de conexão com o banco de dados", "error")
-            return render_template("projetos.html", projetos=[])
+            return render_template(
+                "projetos.html",
+                projetos=[],
+                tipos_escopo=TIPOS_ESCOPO,
+                tipos_projeto=TIPOS_PROJETO,
+                mostrar_concluidos=False,
+            )
 
         cursor = conn.cursor()
 
-        # Buscar projetos COM OS NOMES CORRETOS DAS COLUNAS
-        cursor.execute("""
-            SELECT 
-                ProjetoID,
-                NomeProjeto,
-                DadosGX,
-                servidorproducao,
-                usuarioProducao,
-                senhaproducao,
-                servidorhomologacao,
-                usuariohomologacao,
-                senhahomologacao,
-                BancoHomo,
-                PontoFocal,
-                ConsultorLider,
-                LiderProjeto,
-                migrador,           -- CORRIGIDO: minúsculo
-                bancoProducao,      -- CORRIGIDO: P maiúsculo
-                Concluido
-            FROM Projeto
-            WHERE Concluido = 0
-            ORDER BY NomeProjeto
-        """)
+        mostrar_concluidos = request.args.get('mostrar_concluidos', '').strip().lower() in (
+            '1', 'true', 'sim', 'on', 'yes',
+        )
+
+        if mostrar_concluidos:
+            cursor.execute(f"""
+                SELECT {_COLUNAS_PROJETO_SELECT}
+                FROM Projeto
+                ORDER BY
+                    CASE WHEN ISNULL(Concluido, 0) = 0 THEN 0 ELSE 1 END,
+                    NomeProjeto
+            """)
+        else:
+            cursor.execute(f"""
+                SELECT {_COLUNAS_PROJETO_SELECT}
+                FROM Projeto
+                WHERE ISNULL(Concluido, 0) = 0
+                ORDER BY NomeProjeto
+            """)
         
         projetos_raw = cursor.fetchall()
-        
-        # Converter para lista de dicionários
-        projetos_list = []
-        for projeto in projetos_raw:
-            projeto_dict = {
-                'ProjetoID': projeto.ProjetoID,
-                'NomeProjeto': projeto.NomeProjeto,
-                'DadosGX': projeto.DadosGX,
-                'servidorproducao': projeto.servidorproducao,
-                'usuarioProducao': projeto.usuarioProducao,
-                'senhaproducao': projeto.senhaproducao,
-                'servidorhomologacao': projeto.servidorhomologacao,
-                'usuariohomologacao': projeto.usuariohomologacao,
-                'senhahomologacao': projeto.senhahomologacao,
-                'BancoHomo': projeto.BancoHomo,
-                'PontoFocal': projeto.PontoFocal,
-                'ConsultorLider': projeto.ConsultorLider,
-                'LiderProjeto': projeto.LiderProjeto,
-                'migrador': projeto.migrador,           # CORRIGIDO: minúsculo
-                'bancoProducao': projeto.bancoProducao,  # CORRIGIDO: P maiúsculo
-                'Concluido': bool(projeto.Concluido)
- 
-            }
-            projetos_list.append(projeto_dict)
+        projetos_list = [_projeto_para_dict(projeto) for projeto in projetos_raw]
 
         return render_template(
             "projetos.html",
             projetos=projetos_list,
             tipos_escopo=TIPOS_ESCOPO,
+            tipos_projeto=TIPOS_PROJETO,
+            mostrar_concluidos=mostrar_concluidos,
             usuario=session["usuario"]
         )
 
     except Exception as e:
         logger.error(f"Erro ao carregar projetos: {e}")
         flash(f"Erro ao carregar lista de projetos: {str(e)}", "error")
-        return render_template("projetos.html", projetos=[])
+        return render_template(
+            "projetos.html",
+            projetos=[],
+            tipos_escopo=TIPOS_ESCOPO,
+            tipos_projeto=TIPOS_PROJETO,
+            mostrar_concluidos=False,
+        )
     finally:
         if cursor:
             cursor.close()
@@ -104,7 +247,11 @@ def salvar_projeto():
         return jsonify({"status": "error", "message": "Acesso não autorizado"}), 403
 
     data = request.get_json()
-    logger.info(f"Dados recebidos para salvar projeto: {data}")
+    dados_log = {
+        k: ("***" if ("senha" in k.lower() or k.lower() in ("usuarioproducao", "usuariohomologacao")) else v)
+        for k, v in (data or {}).items()
+    }
+    logger.info(f"Dados recebidos para salvar projeto: {dados_log}")
     
     projeto_id = data.get("projeto_id")
     nome_projeto = data.get("nome_projeto")
@@ -112,13 +259,13 @@ def salvar_projeto():
     
     # CAMPOS DE PRODUÇÃO
     servidorproducao = data.get("servidorproducao")
-    usuarioProducao = data.get("usuarioProducao")
-    senhaproducao = data.get("senhaproducao")
+    usuarioProducao = _cifrar_usuario_db(data.get("usuarioProducao"))
+    senhaproducao_input = data.get("senhaproducao")
     
     # CAMPOS DE HOMOLOGAÇÃO
     servidorhomologacao = data.get("servidorhomologacao")
-    usuariohomologacao = data.get("usuariohomologacao")
-    senhahomologacao = data.get("senhahomologacao")
+    usuariohomologacao = _cifrar_usuario_db(data.get("usuariohomologacao"))
+    senhahomologacao_input = data.get("senhahomologacao")
     
     banco_homo = data.get("banco_homo")
     ponto_focal = data.get("ponto_focal")
@@ -130,6 +277,17 @@ def salvar_projeto():
     bancoProducao = data.get("bancoProducao")
     concluido = 1 if data.get("concluido") else 0
     tipos_escopo = data.get("tipos_escopo", [])
+    tipo_projeto = data.get("tipo_projeto") or ''
+    if tipo_projeto and tipo_projeto not in TIPOS_PROJETO:
+        return jsonify({"status": "error", "message": "Tipo de projeto inválido."}), 400
+    flags_tipo = _flags_tipo_projeto(tipo_projeto)
+    fase1_inicio = _parse_date(data.get("fase1_data_inicio"))
+    fase1_termino = _parse_date(data.get("fase1_data_termino"))
+    fase2_inicio = _parse_date(data.get("fase2_data_inicio"))
+    fase2_termino = _parse_date(data.get("fase2_data_termino"))
+    importacao_liberada = (
+        1 if tipo_projeto == 'arquivo_workflow' and data.get('importacao_liberada') else 0
+    )
 
     tipos_validos = [tipo for tipo in tipos_escopo if tipo in TIPOS_ESCOPO]
     tipos_escopo_str = ",".join(tipos_validos) if tipos_validos else None
@@ -147,6 +305,35 @@ def salvar_projeto():
             return jsonify({"status": "error", "message": "Erro de conexão com o banco"}), 500
 
         cursor = conn.cursor()
+        _garantir_colunas_senha_largas(cursor)
+
+        nome_projeto = (nome_projeto or '').strip()
+        if not nome_projeto:
+            return jsonify({"status": "error", "message": "Nome do projeto é obrigatório."}), 400
+
+        # Unique por nome (case-insensitive) — evita duplicidade na criação/edição
+        if projeto_id and projeto_id != 'null' and projeto_id != '':
+            cursor.execute("""
+                SELECT TOP 1 ProjetoID, NomeProjeto
+                FROM Projeto
+                WHERE LOWER(LTRIM(RTRIM(NomeProjeto))) = LOWER(?)
+                  AND ProjetoID <> ?
+            """, (nome_projeto, int(projeto_id)))
+        else:
+            cursor.execute("""
+                SELECT TOP 1 ProjetoID, NomeProjeto
+                FROM Projeto
+                WHERE LOWER(LTRIM(RTRIM(NomeProjeto))) = LOWER(?)
+            """, (nome_projeto,))
+        duplicado = cursor.fetchone()
+        if duplicado:
+            return jsonify({
+                "status": "error",
+                "message": (
+                    f'Já existe um projeto com o nome "{duplicado.NomeProjeto}" '
+                    f'(ID {duplicado.ProjetoID}). Escolha outro nome.'
+                ),
+            }), 400
 
         if projeto_id and projeto_id != 'null' and projeto_id != '':  # EDITANDO projeto existente
             projeto_id = int(projeto_id)
@@ -154,11 +341,26 @@ def salvar_projeto():
             nome_projeto_antigo = None
             
             # Verificar se o projeto existe
-            cursor.execute("SELECT ProjetoID, NomeProjeto FROM Projeto WHERE ProjetoID = ?", (projeto_id,))
+            cursor.execute(
+                "SELECT ProjetoID, NomeProjeto, senhaproducao, senhahomologacao FROM Projeto WHERE ProjetoID = ?",
+                (projeto_id,),
+            )
             projeto_existente = cursor.fetchone()
             if not projeto_existente:
                 return jsonify({"status": "error", "message": "Projeto não encontrado"}), 404
             nome_projeto_antigo = projeto_existente.NomeProjeto
+
+            senhaproducao = _resolver_senha_para_gravar(
+                senhaproducao_input, projeto_existente.senhaproducao
+            )
+            senhahomologacao = _resolver_senha_para_gravar(
+                senhahomologacao_input, projeto_existente.senhahomologacao
+            )
+            # Re-cifra legado em texto claro se o campo não foi alterado nesta edição
+            if senhaproducao and not esta_criptografado(str(senhaproducao)):
+                senhaproducao = criptografar_segredo(senhaproducao)
+            if senhahomologacao and not esta_criptografado(str(senhahomologacao)):
+                senhahomologacao = criptografar_segredo(senhahomologacao)
 
             # Atualizar projeto COM OS NOMES CORRETOS DAS COLUNAS
             cursor.execute("""
@@ -177,7 +379,15 @@ def salvar_projeto():
                     LiderProjeto = ?,
                     migrador = ?,
                     bancoProducao = ?,
-                    Concluido = ?
+                    Concluido = ?,
+                    TipoWindowsWorkflow = ?,
+                    TipoWorkflowWorkflow = ?,
+                    TipoArquivoWorkflow = ?,
+                    Fase1DataInicio = ?,
+                    Fase1DataTermino = ?,
+                    Fase2DataInicio = ?,
+                    Fase2DataTermino = ?,
+                    ImportacaoLiberada = ?
                 WHERE ProjetoID = ?
             """, (
                 nome_projeto,
@@ -195,6 +405,14 @@ def salvar_projeto():
                 migrador,
                 bancoProducao,
                 concluido,
+                flags_tipo['TipoWindowsWorkflow'],
+                flags_tipo['TipoWorkflowWorkflow'],
+                flags_tipo['TipoArquivoWorkflow'],
+                fase1_inicio,
+                fase1_termino,
+                fase2_inicio,
+                fase2_termino,
+                importacao_liberada,
                 projeto_id
             ))
             logger.info(f"Projeto {projeto_id} atualizado - linhas afetadas: {cursor.rowcount}")
@@ -228,6 +446,10 @@ def salvar_projeto():
 
         else:  # NOVO projeto
             logger.info("Criando novo projeto")
+            senhaproducao = criptografar_segredo(senhaproducao_input) if senhaproducao_input else None
+            senhahomologacao = (
+                criptografar_segredo(senhahomologacao_input) if senhahomologacao_input else None
+            )
             
             # Inserir novo projeto e obter o ID diretamente
             cursor.execute("""
@@ -235,9 +457,12 @@ def salvar_projeto():
                     NomeProjeto, DadosGX, servidorproducao, usuarioProducao, 
                     senhaproducao, servidorhomologacao, usuariohomologacao,
                     senhahomologacao, BancoHomo, PontoFocal, ConsultorLider, LiderProjeto,
-                    migrador, bancoProducao, Concluido
+                    migrador, bancoProducao, Concluido,
+                    TipoWindowsWorkflow, TipoWorkflowWorkflow, TipoArquivoWorkflow,
+                    Fase1DataInicio, Fase1DataTermino, Fase2DataInicio, Fase2DataTermino,
+                    ImportacaoLiberada
                 ) OUTPUT INSERTED.ProjetoID 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 nome_projeto,
                 dados_gx,
@@ -253,7 +478,15 @@ def salvar_projeto():
                 lider_projeto,
                 migrador,
                 bancoProducao,
-                concluido
+                concluido,
+                flags_tipo['TipoWindowsWorkflow'],
+                flags_tipo['TipoWorkflowWorkflow'],
+                flags_tipo['TipoArquivoWorkflow'],
+                fase1_inicio,
+                fase1_termino,
+                fase2_inicio,
+                fase2_termino,
+                importacao_liberada,
             ))
             
             # Obter o ID do novo projeto diretamente do resultado da inserção
@@ -289,7 +522,13 @@ def salvar_projeto():
         logger.error(f"Erro ao salvar projeto: {e}", exc_info=True)
         if conn:
             conn.rollback()
-        return jsonify({"status": "error", "message": f"Erro ao salvar projeto: {str(e)}"}), 500
+        msg = str(e)
+        if 'UQ_Projeto_NomeProjeto' in msg or 'UNIQUE KEY' in msg.upper() or 'unique index' in msg.lower():
+            return jsonify({
+                "status": "error",
+                "message": f'Já existe um projeto com o nome "{nome_projeto}". Escolha outro nome.',
+            }), 400
+        return jsonify({"status": "error", "message": f"Erro ao salvar projeto: {msg}"}), 500
     finally:
         if cursor:
             cursor.close()
@@ -311,26 +550,10 @@ def obter_projeto(projeto_id):
         cursor = conn.cursor()
         
         # Consulta COM OS NOMES CORRETOS DAS COLUNAS
-        cursor.execute("""
-            SELECT 
-                ProjetoID,
-                NomeProjeto,
-                DadosGX,
-                servidorproducao,
-                usuarioProducao,
-                senhaproducao,
-                servidorhomologacao,
-                usuariohomologacao,
-                senhahomologacao,
-                BancoHomo,
-                PontoFocal,
-                ConsultorLider,
-                LiderProjeto,
-                migrador,           -- CORRIGIDO: minúsculo
-                bancoProducao,       -- CORRIGIDO: P maiúsculo
-                Concluido
+        cursor.execute(f"""
+            SELECT {_COLUNAS_PROJETO_SELECT}
             FROM Projeto
-            WHERE Concluido = 0 AND ProjetoID = ?
+            WHERE ProjetoID = ?
         """, (projeto_id,))
         
         projeto = cursor.fetchone()
@@ -338,24 +561,7 @@ def obter_projeto(projeto_id):
         if not projeto:
             return jsonify({"success": False, "message": "Projeto não encontrado"})
         
-        projeto_dict = {
-            'ProjetoID': projeto.ProjetoID,
-            'NomeProjeto': projeto.NomeProjeto,
-            'DadosGX': projeto.DadosGX,
-            'servidorproducao': projeto.servidorproducao,
-            'usuarioProducao': projeto.usuarioProducao,
-            'senhaproducao': projeto.senhaproducao,
-            'servidorhomologacao': projeto.servidorhomologacao,
-            'usuariohomologacao': projeto.usuariohomologacao,
-            'senhahomologacao': projeto.senhahomologacao,
-            'BancoHomo': projeto.BancoHomo,
-            'PontoFocal': projeto.PontoFocal,
-            'ConsultorLider': projeto.ConsultorLider,
-            'LiderProjeto': projeto.LiderProjeto,
-            'migrador': projeto.migrador,           # CORRIGIDO: minúsculo
-            'bancoProducao': projeto.bancoProducao,  # CORRIGIDO: P maiúsculo
-            'Concluido': bool(projeto.Concluido)
-        }
+        projeto_dict = _projeto_para_dict(projeto)
 
         cursor.execute("""
             SELECT TOP 1 TipoEscopoIDs
@@ -375,6 +581,75 @@ def obter_projeto(projeto_id):
         logger.error(f"Erro ao obter projeto: {e}")
         return jsonify({"success": False, "message": f"Erro ao obter projeto: {str(e)}"})
     
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@projetos_bp.route("/excluir_projeto/<int:projeto_id>", methods=["POST"])
+def excluir_projeto(projeto_id):
+    if "usuario" not in session or not session["usuario"].get("adm"):
+        return jsonify({"status": "error", "message": "Acesso não autorizado"}), 403
+
+    conn = None
+    cursor = None
+    try:
+        conn = conectar_banco()
+        if not conn:
+            return jsonify({"status": "error", "message": "Erro de conexão com o banco"}), 500
+
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT ProjetoID, NomeProjeto FROM Projeto WHERE ProjetoID = ?",
+            (projeto_id,),
+        )
+        projeto = cursor.fetchone()
+        if not projeto:
+            return jsonify({"status": "error", "message": "Projeto não encontrado"}), 404
+
+        nome = projeto.NomeProjeto
+
+        # Dependências antes de remover o projeto
+        cursor.execute("DELETE FROM UsuarioProjeto WHERE ProjetoID = ?", (projeto_id,))
+        cursor.execute("DELETE FROM Escopo WHERE ProjetoID = ?", (projeto_id,))
+        cursor.execute(
+            "UPDATE Empresa SET ProjetoID = NULL WHERE ProjetoID = ?",
+            (projeto_id,),
+        )
+        cursor.execute("DELETE FROM Projeto WHERE ProjetoID = ?", (projeto_id,))
+
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({"status": "error", "message": "Projeto não encontrado."}), 404
+
+        # Se o projeto excluído é o da sessão, limpa a seleção
+        projeto_sessao = session.get('projeto_selecionado') or {}
+        if str(projeto_sessao.get('ProjetoID')) == str(projeto_id):
+            session.pop('projeto_selecionado', None)
+
+        conn.commit()
+        logger.info("Projeto excluído: ID=%s Nome=%s", projeto_id, nome)
+        return jsonify({
+            "status": "success",
+            "message": f'Projeto "{nome}" excluído com sucesso!',
+        })
+
+    except Exception as e:
+        logger.error(f"Erro ao excluir projeto: {e}", exc_info=True)
+        if conn:
+            conn.rollback()
+        msg = str(e)
+        if 'REFERENCE' in msg.upper() or 'FOREIGN KEY' in msg.upper():
+            return jsonify({
+                "status": "error",
+                "message": (
+                    "Não foi possível excluir: existem vínculos neste projeto. "
+                    "Remova as associações antes de excluir."
+                ),
+            }), 400
+        return jsonify({"status": "error", "message": f"Erro ao excluir projeto: {msg}"}), 500
     finally:
         if cursor:
             cursor.close()

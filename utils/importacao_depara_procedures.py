@@ -63,6 +63,152 @@ DEPARA_POR_LAYOUT = {
             'tabelas': [('Banco_DePara', 'Banco_Codigo')],
         },
     ],
+    'produto': [
+        {
+            'procedure': 'up_01_Produto_DePara_Unidade',
+            'chave': 'unidade',
+            'tabelas': [('Unidade_DePara', 'Unidade_Codigo')],
+        },
+        {
+            'procedure': 'up_02_Produto_DePara_TipoProduto',
+            'chave': 'tipo_produto',
+            'tabelas': [('TipoProduto_DePara', 'TipoProduto_Codigo')],
+        },
+        {
+            'procedure': 'up_03_Produto_DePara_GrupoLucratividade',
+            'chave': 'grupo_lucratividade',
+            'tabelas': [('GrupoLucratividade_DePara', 'GrupoLucratividade_Codigo')],
+        },
+        {
+            'procedure': 'up_04_Produto_DePara_GrupoProduto',
+            'chave': 'grupo_produto',
+            'tabelas': [('GrupoProduto_DePara', 'GrupoProduto_Codigo')],
+        },
+        {
+            'procedure': 'up_05_Produto_DePara_Procedencia',
+            'chave': 'procedencia',
+            'tabelas': [('Procedencia_DePara', 'Procedencia_Codigo')],
+        },
+        {
+            'procedure': 'up_06_Produto_DePara_TabelaPreco',
+            'chave': 'tabela_preco',
+            'tabelas': [('TabelaPreco_DePara', 'TabelaPreco_Codigo')],
+        },
+    ],
+    'produto_estoque': [
+        {
+            'procedure': 'up_01_ProdutoEstoque_DePara_Estoque',
+            'chave': 'estoque',
+            'tabelas': [('Estoque_DePara', 'Estoque_Codigo')],
+        },
+    ],
+    'movimento_estoque': [
+        {
+            'procedure': 'up_01_MovimentoEstoque_DePara_NaturezaOperacao',
+            'chave': 'natureza_operacao',
+            'tabelas': [('NaturezaOperacao_DePara', 'NaturezaOperacao_Codigo')],
+        },
+        {
+            'procedure': 'up_02_MovimentoEstoque_DePara_Estoque',
+            'chave': 'estoque',
+            'tabelas': [('Estoque_DePara', 'Estoque_Codigo')],
+        },
+        {
+            'procedure': 'up_03_MovimentoEstoque_DePara_Departamento',
+            'chave': 'departamento',
+            'tabelas': [('Departamento_Depara', 'Departamento_Codigo')],
+        },
+    ],
+    'veiculo': [
+        {
+            'procedure': 'up_01_Veiculo_DePara_ModeloVeiculo',
+            'chave': 'modelo_veiculo',
+            'tabelas': [('ModeloVeiculo_DePara', 'ModeloVeiculo_Codigo')],
+        },
+        {
+            'procedure': 'up_02_Veiculo_DePara_CorExterna',
+            'chave': 'cor_externa',
+            'tabelas': [('CorExterna_DePara', 'Cor_Codigo')],
+        },
+        {
+            'procedure': 'up_03_Veiculo_DePara_CorInterna',
+            'chave': 'cor_interna',
+            'tabelas': [('CorInterna_DePara', 'Cor_Codigo')],
+        },
+        {
+            'procedure': 'up_04_Veiculo_DePara_VeiculoAno',
+            'chave': 'veiculo_ano',
+            'tabelas': [('VeiculoAno_DePara', 'VeiculoAno_Codigo')],
+        },
+        {
+            'procedure': 'up_05_Veiculo_DePara_Estado',
+            'chave': 'estado',
+            'tabelas': [('Estado_DePara', 'Estado_Codigo')],
+        },
+        {
+            'procedure': 'up_06_Veiculo_DePara_Municipio',
+            'chave': 'municipio',
+            'tabelas': [('Municipio_DePara', 'Municipio_Codigo')],
+        },
+        {
+            'procedure': 'up_07_Veiculo_DePara_Marca',
+            'chave': 'marca',
+            'tabelas': [('Marca_DePara', 'Marca_Codigo')],
+        },
+    ],
+    'fseg_cab': [
+        {
+            'procedure': 'up_01_Fseg_DePara_TipoOS',
+            'chave': 'tipo_os',
+            'tabelas': [('TipoOS_DePara', 'TipoOS_Codigo')],
+        },
+    ],
+    'fseg_prd': [
+        {
+            'procedure': 'up_01_Fseg_DePara_TipoOS',
+            'chave': 'tipo_os',
+            'tabelas': [('TipoOS_DePara', 'TipoOS_Codigo')],
+        },
+    ],
+    'fseg_srv': [
+        {
+            'procedure': 'up_01_Fseg_DePara_TipoOS',
+            'chave': 'tipo_os',
+            'tabelas': [('TipoOS_DePara', 'TipoOS_Codigo')],
+        },
+    ],
+    'financeiro': [
+        {
+            'procedure': 'up_01_Financeiro_DePara_AgenteCobrador',
+            'chave': 'agente_cobrador',
+            'tabelas': [('AgenteCobrador_DePara', 'AgenteCobrador_Codigo')],
+        },
+        {
+            'procedure': 'up_02_Financeiro_DePara_ContaGerencial',
+            'chave': 'conta_gerencial',
+            'tabelas': [('ContaGerencial_DePara', 'ContaGerencial_Codigo')],
+        },
+        {
+            'procedure': 'up_03_Financeiro_DePara_TipoTitulo',
+            'chave': 'tipo_titulo',
+            'tabelas': [('TipoTitulo_DePara', 'TipoTitulo_Codigo')],
+        },
+        {
+            'procedure': 'up_04_Financeiro_DePara_Departamento',
+            'chave': 'departamento',
+            'tabelas': [('Departamento_Depara', 'Departamento_Codigo')],
+        },
+        {
+            'procedure': 'up_05_Financeiro_DePara_NaturezaOperacao',
+            'chave': 'natureza_operacao',
+            'tabelas': [('NaturezaOperacao_DePara', 'NaturezaOperacao_Codigo')],
+        },
+        {
+            'procedure': 'up_06_Financeiro_DePara_Banco',
+            'chave': 'banco',
+            'tabelas': [('Banco_DePara', 'Banco_Codigo')],
+        },
+    ],
 }
 
 
@@ -142,4 +288,12 @@ def executar_depara_pos_importacao(cursor, tipo_layout, banco_gx, banco_wf):
         resumo[chave] = stats
 
     logger.info("De/Para concluído para layout %s: %s", tipo_layout, resumo.get('procedures_executadas'))
+
+    # Marca no dashboard a data em que o bloco passou a ter De/Para disponível
+    try:
+        from utils.bloco_disponivel import registrar_apos_depara
+        registrar_apos_depara(tipo_layout)
+    except Exception as exc:
+        logger.warning("Não foi possível registrar data de disponibilidade do bloco: %s", exc)
+
     return resumo

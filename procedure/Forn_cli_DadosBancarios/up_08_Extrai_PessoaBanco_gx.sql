@@ -3,6 +3,8 @@
 -- Staging : Arquivo_Forn_cli_DadosBancarios_Tratado
 -- Destino : PessoaBanco_MG
 -- Procedure: up_08_Extrai_PessoaBanco_gx (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

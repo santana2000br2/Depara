@@ -3,6 +3,8 @@
 -- Destino : EstadoCivil_DePara
 -- Procedure: up_04_Pessoa_DePara_EstadoCivil
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

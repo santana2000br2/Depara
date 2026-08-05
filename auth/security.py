@@ -16,33 +16,19 @@ def hash_senha(senha):
 
 def verificar_senha(senha, hash_armazenado):
     try:
-        print(f"DEBUG SECURITY: Verificando senha: '{senha}'")
-        print(f"DEBUG SECURITY: Hash armazenado: '{hash_armazenado}'")
-        
         if not hash_armazenado:
-            print("DEBUG SECURITY: Hash armazenado está vazio")
             return False
 
         if isinstance(hash_armazenado, str):
             hash_armazenado = hash_armazenado.strip()
             if not hash_armazenado:
-                print("DEBUG SECURITY: Hash armazenado está vazio após trim")
                 return False
             hash_armazenado = hash_armazenado.encode('utf-8')
-        
-        # A senha também precisa estar em bytes
+
         senha_bytes = senha.encode('utf-8')
-        
-        print(f"DEBUG SECURITY: Hash em bytes: {hash_armazenado}")
-        print(f"DEBUG SECURITY: Senha em bytes: {senha_bytes}")
-        
-        resultado = bcrypt.checkpw(senha_bytes, hash_armazenado)
-        print(f"DEBUG SECURITY: Resultado do checkpw: {resultado}")
-        
-        return resultado
+        return bcrypt.checkpw(senha_bytes, hash_armazenado)
     except Exception as e:
         logger.error(f"Erro ao verificar senha: {e}")
-        print(f"DEBUG SECURITY: Exception: {e}")
         return False
 
 

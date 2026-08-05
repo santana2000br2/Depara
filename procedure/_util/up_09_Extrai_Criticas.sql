@@ -3,6 +3,8 @@
 -- Staging : (multiplas tabelas _MG)
 -- Destino : (consulta)
 -- Procedure: up_09_Extrai_Criticas (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_SeuProjeto];  -- ALTERE

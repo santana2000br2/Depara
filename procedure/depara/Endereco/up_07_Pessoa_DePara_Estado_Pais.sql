@@ -3,6 +3,8 @@
 -- Destino : Estado_DePara, Pais_DePara
 -- Procedure: up_07_Pessoa_DePara_Estado_Pais
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

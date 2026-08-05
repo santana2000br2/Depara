@@ -1,9 +1,10 @@
-from flask import Flask, redirect, url_for, jsonify, request
+from flask import Flask, redirect, url_for, jsonify, request, flash, render_template
 from config import Config
 import sys
 import os
 from flask import session
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -67,11 +68,42 @@ from routes.tiposubconta import tiposubconta_bp
 # Importar blueprints de importação
 from routes.importacao import importacao_bp
 from routes.importacao.layout import layout_bp
+from routes.importacao.historico_envio import historico_envio_bp
+from routes.validador_estrutura import validador_estrutura_bp
 from routes.envio_arquivo import envio_arquivo_bp
+from routes.email import email_bp
 
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = app.config.get("SECRET_KEY", "chave-secreta-padrao")
+
+# IIS/ARR/proxy: confia em X-Forwarded-Proto/For/Host para HTTPS e HSTS corretos.
+# x_*=1 assume um hop de proxy na frente (ajuste via PROXY_FIX_X_FOR se necessário).
+_proxy_hops = int(os.environ.get("PROXY_FIX_X_FOR", "1") or "1")
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=_proxy_hops,
+    x_proto=_proxy_hops,
+    x_host=_proxy_hops,
+    x_port=_proxy_hops,
+    x_prefix=_proxy_hops,
+)
+
+# Hardening HTTP global (headers, HSTS, CSP/nonce, OPTIONS, HTTPS)
+from utils.security_headers import init_security
+init_security(app)
+
+# Reduz drasticamente o tamanho do HTML gerado nas tabelas grandes de De/Para
+app.jinja_env.trim_blocks = True
+app.jinja_env.lstrip_blocks = True
+
+import logging
+_startup_logger = logging.getLogger('auth')
+_startup_logger.info(
+    "Limite de upload ativo: MAX_CONTENT_LENGTH=%s bytes (%.1f MB)",
+    app.config.get('MAX_CONTENT_LENGTH'),
+    (app.config.get('MAX_CONTENT_LENGTH') or 0) / (1024 * 1024),
+)
 
 # Registrar os blueprints - AUTH PRIMEIRO
 app.register_blueprint(auth_bp, url_prefix="/auth")
@@ -134,30 +166,30 @@ app.register_blueprint(tiposubconta_bp, url_prefix="/tiposubconta")
 
 # Registrar blueprints de importação - CORRIGIDO
 app.register_blueprint(importacao_bp, url_prefix="/importacao")
+app.register_blueprint(validador_estrutura_bp, url_prefix="/validador-estrutura")
 app.register_blueprint(layout_bp, url_prefix="/importacao/layout")
+app.register_blueprint(historico_envio_bp, url_prefix="/importacao/historico-envios")
 app.register_blueprint(envio_arquivo_bp, url_prefix="/envio_arquivo")
+app.register_blueprint(email_bp, url_prefix="/email")
 
 @app.route("/debug-endpoints")
 def debug_endpoints():
-    import json
+    """Desabilitado: exposição da superfície de rotas."""
+    return jsonify({"error": "Não encontrado"}), 404
 
-    endpoints = []
-    for rule in app.url_map.iter_rules():
-        # CORREÇÃO: Verificar se rule.methods não é None antes de converter para lista
-        methods = rule.methods
-        if methods is None:
-            methods_list = []
-        else:
-            methods_list = list(methods)
-        
-        endpoints.append(
-            {
-                "endpoint": rule.endpoint,
-                "methods": methods_list,
-                "rule": str(rule),
-            }
-        )
-    return json.dumps(endpoints, indent=2)
+
+@app.route("/api/diagnostico/upload-limite")
+def diagnostico_upload_limite():
+    """Limite de upload — apenas administradores autenticados."""
+    if "usuario" not in session or not session["usuario"].get("adm"):
+        return jsonify({"error": "Não autorizado"}), 403
+    max_bytes = app.config.get("MAX_CONTENT_LENGTH") or 0
+    return jsonify({
+        "max_content_length_bytes": max_bytes,
+        "max_content_length_mb": round(max_bytes / (1024 * 1024), 1),
+        "env_max_content_length": os.environ.get("MAX_CONTENT_LENGTH"),
+    })
+
 
 import logging
 logging.basicConfig(
@@ -171,10 +203,23 @@ logging.basicConfig(
 
 @app.context_processor
 def inject_user():
-    """Injeta o usuário automaticamente em todos os templates"""
+    """Injeta usuário e projeto da sessão para todos os templates."""
+    from utils.projeto_acesso import importacao_completa_liberada, projeto_eh_arquivo_workflow
+
+    ctx = {
+        'usuario': None,
+        'projeto_selecionado': None,
+        'importacao_liberada_projeto': True,
+        'projeto_arquivo_workflow': False,
+    }
     if "usuario" in session:
-        return {'usuario': session['usuario']}
-    return {'usuario': None}
+        ctx['usuario'] = session['usuario']
+    if "projeto_selecionado" in session:
+        projeto = session['projeto_selecionado']
+        ctx['projeto_selecionado'] = projeto
+        ctx['projeto_arquivo_workflow'] = projeto_eh_arquivo_workflow(projeto)
+        ctx['importacao_liberada_projeto'] = importacao_completa_liberada(projeto)
+    return ctx
 
 @app.route("/")
 def index():
@@ -183,16 +228,31 @@ def index():
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(_error):
-    """Retorna erro amigavel quando upload excede limite."""
+    """Retorna erro amigável quando upload excede limite."""
     max_bytes = app.config.get("MAX_CONTENT_LENGTH", 0) or 0
-    max_mb = round(max_bytes / (1024 * 1024), 2) if max_bytes else 0
+    max_mb = round(max_bytes / (1024 * 1024), 1) if max_bytes else 0
     message = (
-        f"Arquivo excede o limite permitido ({max_mb} MB). "
-        "Reduza o tamanho da planilha ou ajuste MAX_CONTENT_LENGTH."
+        f"Arquivo excede o limite de upload ({max_mb} MB). "
+        "Divida o arquivo em partes menores."
     )
+    logging.getLogger('auth').error(
+        "RequestEntityTooLarge: path=%s content_length=%s limite=%s",
+        request.path,
+        request.content_length,
+        max_bytes,
+    )
+
+    if request.path.startswith('/importacao'):
+        flash(message, 'error')
+        return redirect(url_for('importacao.index'))
+
+    if request.path.startswith('/validador-estrutura'):
+        flash(message, 'error')
+        return redirect(url_for('validador_estrutura.index'))
 
     if request.path.endswith("/importar") or request.accept_mimetypes.accept_json:
         return jsonify({"success": False, "message": message}), 413
+
     return message, 413
 
 

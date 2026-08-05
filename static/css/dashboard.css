@@ -1031,6 +1031,16 @@ body {
     border-left-color: #007bff;
 }
 
+.submenu-disabled {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px 10px 45px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 14px;
+    cursor: not-allowed;
+}
+
 .submenu li a i {
     margin-right: 8px;
     width: 16px;
@@ -1088,7 +1098,7 @@ body {
     color: white;
 }
 
-/* Garantir que o submenu da Importação (Novo) fique sempre visível */
+/* Garantir que o submenu de Envio de arquivos fique sempre visível */
 .menu-with-submenu.active .submenu {
     max-height: none !important;
     display: block !important;

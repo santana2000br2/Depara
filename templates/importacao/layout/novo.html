@@ -38,6 +38,24 @@
                     <label for="descricao">Descrição</label>
                     <textarea id="descricao" name="descricao" class="layouts-form-control" rows="3" placeholder="Descreva o propósito deste layout..."></textarea>
                 </div>
+                <div class="layouts-form-row-escopo">
+                    <div class="layouts-form-group">
+                        <label for="tipo_escopo">Escopo</label>
+                        <select id="tipo_escopo" name="tipo_escopo" class="layouts-form-control">
+                            <option value="">— Sem escopo —</option>
+                            {% for codigo, nome in tipos_escopo.items() %}
+                            <option value="{{ codigo }}">{{ nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="layouts-form-group layouts-form-group-check">
+                        <label for="obrigatorio_escopo">Obrigatório no escopo</label>
+                        <div class="layouts-checkbox-wrap layouts-checkbox-wrap-lg">
+                            <input type="checkbox" id="obrigatorio_escopo" name="obrigatorio_escopo" value="1">
+                            <span class="layouts-check-hint">Exige este layout quando o escopo estiver ativo no projeto</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -49,9 +67,6 @@
             <div class="layouts-form-card-body">
                 <div class="layouts-colunas-header">
                     <span>Configure posição, descrição, tipo de dado e regras de cada coluna.</span>
-                    <button type="button" id="btn-adicionar-coluna" class="layouts-btn-add-col">
-                        <i class="fas fa-plus"></i> Adicionar Coluna
-                    </button>
                 </div>
                 <div id="colunas-container">
                     <div class="layouts-coluna-item coluna-item">
@@ -91,6 +106,11 @@
                             </button>
                         </div>
                     </div>
+                </div>
+                <div class="layouts-colunas-footer">
+                    <button type="button" id="btn-adicionar-coluna" class="layouts-btn-add-col">
+                        <i class="fas fa-plus"></i> Adicionar Coluna
+                    </button>
                 </div>
             </div>
         </div>

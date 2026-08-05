@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/layouts.css') }}">
+<style>
+    .versao-timeline { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+    .versao-card {
+        background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+        padding: 18px 20px; display: flex; align-items: center; justify-content: space-between;
+        gap: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .versao-card-info { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+    .versao-badge-num {
+        background: #eef2ff; color: #4f46e5; font-weight: 700; border-radius: 10px;
+        min-width: 54px; height: 54px; display: flex; align-items: center; justify-content: center;
+        flex-direction: column; font-size: 1.1rem; line-height: 1;
+    }
+    .versao-badge-num small { font-size: 0.6rem; font-weight: 600; opacity: 0.7; }
+    .versao-detalhes { min-width: 0; }
+    .versao-detalhes h4 { margin: 0 0 4px; font-size: 0.95rem; color: #111827; }
+    .versao-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.8rem; color: #6b7280; }
+    .versao-meta span { display: inline-flex; align-items: center; gap: 5px; }
+    .versao-tag {
+        font-size: 0.7rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; text-transform: uppercase;
+    }
+    .versao-tag.edicao { background: #fef3c7; color: #92400e; }
+    .versao-tag.restauracao { background: #dbeafe; color: #1e40af; }
+    .versao-tag.criacao { background: #dcfce7; color: #166534; }
+    .versao-card-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .versao-btn {
+        border: none; border-radius: 8px; padding: 8px 14px; font-size: 0.82rem; font-weight: 600;
+        cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+    }
+    .versao-btn.view { background: #f3f4f6; color: #374151; }
+    .versao-btn.view:hover { background: #e5e7eb; }
+    .versao-btn.restore { background: #4f46e5; color: #fff; }
+    .versao-btn.restore:hover { background: #4338ca; }
+    .versao-empty { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .versao-empty i { font-size: 2.4rem; color: #d1d5db; display: block; margin-bottom: 14px; }
+
+    .vmodal-overlay {
+        position: fixed; inset: 0; background: rgba(17,24,39,0.55); display: none;
+        align-items: center; justify-content: center; z-index: 1000; padding: 20px;
+    }
+    .vmodal-overlay.active { display: flex; }
+    .vmodal {
+        background: #fff; border-radius: 14px; width: 100%; max-width: 640px; max-height: 85vh;
+        overflow: auto; padding: 24px;
+    }
+    .vmodal h3 { margin: 0 0 4px; }
+    .vmodal-sub { color: #6b7280; font-size: 0.85rem; margin-bottom: 16px; }
+    .vmodal table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .vmodal th, .vmodal td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+    .vmodal th { background: #f9fafb; color: #374151; font-weight: 600; }
+    .vmodal-close {
+        margin-top: 18px; background: #f3f4f6; border: none; border-radius: 8px; padding: 9px 16px;
+        font-weight: 600; cursor: pointer; color: #374151;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layouts-form-page">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="layouts-flash">
+        {% for category, message in messages %}
+        <div class="layouts-flash-item {{ category }}">
+            <i class="fas fa-{% if category == 'error' %}exclamation-circle{% elif category == 'success' %}check-circle{% else %}info-circle{% endif %}"></i>
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <nav class="layouts-breadcrumb">
+        <a href="{{ url_for('layout.listar_layouts') }}"><i class="fas fa-table"></i> Layouts</a>
+        <i class="fas fa-chevron-right" style="font-size:0.7rem;"></i>
+        <span>Histórico: {{ layout.NomeLayout }}</span>
+    </nav>
+
+    <div class="layouts-form-header">
+        <h1><i class="fas fa-history"></i> Histórico de Versões</h1>
+        <p>Versões anteriores do layout <strong>{{ layout.NomeLayout }}</strong>. Cada alteração guarda o estado anterior, permitindo restaurá-lo quando necessário.</p>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-bottom:6px;">
+        <a href="{{ url_for('layout.editar_layout', layout_id=layout.LayoutID) }}" class="layouts-btn-secondary">
+            <i class="fas fa-edit"></i> Editar layout atual
+        </a>
+    </div>
+
+    {% if versoes %}
+    <div class="versao-timeline">
+        {% for versao in versoes %}
+        <div class="versao-card">
+            <div class="versao-card-info">
+                <div class="versao-badge-num">
+                    <small>v</small>{{ versao.Versao }}
+                </div>
+                <div class="versao-detalhes">
+                    <h4>
+                        {{ versao.NomeLayout }}
+                        <span class="versao-tag {{ versao.TipoAcao }}">{{ versao.TipoAcaoLabel }}</span>
+                    </h4>
+                    <div class="versao-meta">
+                        <span><i class="fas fa-columns"></i> {{ versao.TotalColunas }} coluna(s)</span>
+                        <span>
+                            <i class="fas fa-calendar-alt"></i>
+                            {% if versao.DataVersao %}
+                                {% if versao.DataVersao is string %}{{ versao.DataVersao }}
+                                {% else %}{{ versao.DataVersao.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+                            {% else %}—{% endif %}
+                        </span>
+                        {% if versao.Observacao %}
+                        <span><i class="fas fa-info-circle"></i> {{ versao.Observacao }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="versao-card-actions">
+                <button type="button" class="versao-btn view"
+                    onclick="verVersao({{ versao.LayoutVersaoID }})">
+                    <i class="fas fa-eye"></i> Ver colunas
+                </button>
+                <button type="button" class="versao-btn restore"
+                    data-id="{{ versao.LayoutVersaoID }}"
+                    data-versao="{{ versao.Versao }}"
+                    onclick="abrirModalRestaurar(this)">
+                    <i class="fas fa-undo"></i> Restaurar
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="versao-empty">
+        <i class="fas fa-clock-rotate-left"></i>
+        <h3>Nenhuma versão registrada ainda</h3>
+        <p>Assim que este layout for editado, o estado anterior aparecerá aqui e poderá ser restaurado.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal de detalhes da versão -->
+<div class="vmodal-overlay" id="vmodal-detalhe">
+    <div class="vmodal">
+        <h3 id="vmodal-titulo">Versão</h3>
+        <div class="vmodal-sub" id="vmodal-sub"></div>
+        <table>
+            <thead>
+                <tr><th>Pos.</th><th>Descrição</th><th>Obrig.</th><th>Validação</th><th>Tipo</th></tr>
+            </thead>
+            <tbody id="vmodal-colunas"></tbody>
+        </table>
+        <button type="button" class="vmodal-close" onclick="fecharModalDetalhe()">Fechar</button>
+    </div>
+</div>
+
+<!-- Modal de confirmação de restauração -->
+<div class="layouts-modal-overlay" id="modal-restaurar">
+    <div class="layouts-modal">
+        <div class="layouts-modal-icon" style="background:#eef2ff;color:#4f46e5;"><i class="fas fa-undo"></i></div>
+        <h3>Restaurar versão?</h3>
+        <p>O layout voltará ao estado da <strong id="modal-versao-num"></strong>. O estado atual será guardado automaticamente como uma nova versão, então você poderá desfazer.</p>
+        <div class="layouts-modal-actions">
+            <button type="button" class="layouts-modal-cancel" onclick="fecharModalRestaurar()">Cancelar</button>
+            <button type="button" class="layouts-modal-confirm" id="btn-confirmar-restaurar" style="background:#4f46e5;">Restaurar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const URL_VER_VERSAO = "{{ url_for('layout.ver_versao', layout_versao_id=0) }}";
+const URL_RESTAURAR = "{{ url_for('layout.restaurar_versao_layout', layout_versao_id=0) }}";
+let versaoIdRestaurar = null;
+
+function verVersao(id) {
+    fetch(URL_VER_VERSAO.replace('/0', '/' + id))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.message || 'Erro ao carregar versão'); return; }
+            const v = data.versao;
+            document.getElementById('vmodal-titulo').textContent = 'Versão ' + v.Versao + ' — ' + v.NomeLayout;
+            document.getElementById('vmodal-sub').textContent =
+                (v.Descricao || 'Sem descrição') + ' • ' + (v.DataVersao || '');
+            const tbody = document.getElementById('vmodal-colunas');
+            tbody.innerHTML = '';
+            (v.colunas || []).forEach(c => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${c.Posicao}</td><td>${c.Descricao || ''}</td>` +
+                    `<td>${c.Obrigatorio ? 'Sim' : 'Não'}</td><td>${c.Validacao || '—'}</td><td>${c.TipoDado || ''}</td>`;
+                tbody.appendChild(tr);
+            });
+            document.getElementById('vmodal-detalhe').classList.add('active');
+        })
+        .catch(() => alert('Erro ao carregar versão'));
+}
+
+function fecharModalDetalhe() {
+    document.getElementById('vmodal-detalhe').classList.remove('active');
+}
+
+function abrirModalRestaurar(btn) {
+    versaoIdRestaurar = btn.dataset.id;
+    document.getElementById('modal-versao-num').textContent = 'versão ' + btn.dataset.versao;
+    document.getElementById('modal-restaurar').classList.add('active');
+}
+
+function fecharModalRestaurar() {
+    versaoIdRestaurar = null;
+    document.getElementById('modal-restaurar').classList.remove('active');
+}
+
+document.getElementById('btn-confirmar-restaurar').addEventListener('click', function() {
+    if (!versaoIdRestaurar) return;
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Restaurando...';
+
+    fetch(URL_RESTAURAR.replace('/0', '/' + versaoIdRestaurar), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message || 'Erro ao restaurar versão');
+            btn.disabled = false;
+            btn.textContent = 'Restaurar';
+        }
+    })
+    .catch(() => {
+        alert('Erro ao restaurar versão');
+        btn.disabled = false;
+        btn.textContent = 'Restaurar';
+    });
+});
+
+[document.getElementById('vmodal-detalhe'), document.getElementById('modal-restaurar')].forEach(overlay => {
+    overlay.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('active'); });
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { fecharModalDetalhe(); fecharModalRestaurar(); }
+});
+</script>
+{% endblock %}

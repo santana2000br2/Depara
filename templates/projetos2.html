@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gerenciar Projetos - DE x PARA</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -564,7 +564,7 @@
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2 id="modalTitle">Adicionar Projeto</h2>
-            <form id="projetoForm">
+            <form id="projetoForm" autocomplete="off">
                 <input type="hidden" id="projeto_id" name="projeto_id" value="">
                 
                 <!-- CAMPOS GERAIS -->
@@ -605,7 +605,7 @@
                     
                     <div class="form-group password-toggle">
                         <label for="senhaproducao">Senha de Produção:</label>
-                        <input type="password" id="senhaproducao" name="senhaproducao">
+                        <input type="password" id="senhaproducao" name="senhaproducao" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
                         <span class="toggle-icon" id="toggleSenhaProducao">
                             <i class="fas fa-eye"></i>
                         </span>
@@ -635,7 +635,7 @@
                     
                     <div class="form-group password-toggle">
                         <label for="senhahomologacao">Senha de Homologação:</label>
-                        <input type="password" id="senhahomologacao" name="senhahomologacao">
+                        <input type="password" id="senhahomologacao" name="senhahomologacao" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
                         <span class="toggle-icon" id="toggleSenhaHomologacao">
                             <i class="fas fa-eye"></i>
                         </span>
@@ -780,13 +780,13 @@
                     document.getElementById('bancoProducao').value = projeto.bancoProducao || '';
                     document.getElementById('servidorproducao').value = projeto.servidorproducao || '';
                     document.getElementById('usuarioProducao').value = projeto.usuarioProducao || '';
-                    document.getElementById('senhaproducao').value = projeto.senhaproducao || '';
+                    document.getElementById('senhaproducao').value = '';
                     
                     // Campos de homologação
                     document.getElementById('banco_homo').value = projeto.BancoHomo || '';
                     document.getElementById('servidorhomologacao').value = projeto.servidorhomologacao || '';
                     document.getElementById('usuariohomologacao').value = projeto.usuariohomologacao || '';
-                    document.getElementById('senhahomologacao').value = projeto.senhahomologacao || '';
+                    document.getElementById('senhahomologacao').value = '';
                     
                     // Informações da equipe
                     document.getElementById('ponto_focal').value = projeto.PontoFocal || '';

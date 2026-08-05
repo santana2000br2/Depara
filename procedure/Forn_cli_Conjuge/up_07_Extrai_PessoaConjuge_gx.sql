@@ -1,8 +1,10 @@
 -- =============================================================================
 -- Layout: Forn_cli_Conjuge.txt
 -- Staging : Arquivo_Forn_cli_Conjuge_Tratado
--- Destino : FichaCadastralConjuge_MG
+-- Destino : PessoaConjuge_MG
 -- Procedure: up_07_Extrai_PessoaConjuge_gx (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

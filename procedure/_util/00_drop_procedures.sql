@@ -1,3 +1,9 @@
+-- =============================================================================
+-- Script SQL — Depara
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
+-- =============================================================================
+
 -- Remove procedures de extração (executar antes de reinstalar)
 -- USE [DadosGX_SeuProjeto];  -- ALTERE
 -- GO

@@ -312,6 +312,48 @@
     color: #d68910;
 }
 
+.layout-badge.escopo {
+    background: #eef2ff;
+    color: #4338ca;
+}
+
+.layout-badge.obrigatorio {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.layouts-form-row-escopo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 720px) {
+    .layouts-form-row-escopo {
+        grid-template-columns: 1fr;
+    }
+}
+
+.layouts-checkbox-wrap-lg {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding-top: 6px;
+}
+
+.layouts-checkbox-wrap-lg input[type="checkbox"] {
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+}
+
+.layouts-check-hint {
+    font-size: 0.85rem;
+    color: #6b7280;
+    font-weight: 400;
+    line-height: 1.35;
+}
+
 .layout-card-actions {
     display: flex;
     gap: 8px;
@@ -643,15 +685,18 @@ textarea.layouts-form-control {
 .layouts-colunas-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     margin-bottom: 16px;
-    flex-wrap: wrap;
-    gap: 10px;
 }
 
 .layouts-colunas-header span {
     font-size: 0.85rem;
     color: #7f8c8d;
+}
+
+.layouts-colunas-footer {
+    margin-top: 16px;
+    display: flex;
+    justify-content: flex-start;
 }
 
 .layouts-btn-add-col {

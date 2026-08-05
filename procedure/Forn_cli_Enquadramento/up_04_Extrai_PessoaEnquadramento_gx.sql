@@ -3,6 +3,8 @@
 -- Staging : Arquivo_Forn_Cli_Enquadramento_Tratado
 -- Destino : PessoaEnquadramento_MG
 -- Procedure: up_04_Extrai_PessoaEnquadramento_gx (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE
@@ -25,20 +27,9 @@ DECLARE @CMD NVARCHAR(MAX)
 			PRINT 'O < '+ @BancoDadosGX +' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
 			RETURN
 		END
-	SELECT @CMD = N'
-		IF NOT EXISTS (
-			SELECT 1 FROM ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.sys.objects
-			WHERE type = ''U'' AND name = ''Arquivo_Forn_Cli_Enquadramento_Tratado''
-		)
-			SELECT @ok = 0
-		ELSE
-			SELECT @ok = 1
-	'
-	DECLARE @StagingOk BIT = 0
-	EXEC sp_executesql @CMD, N'@ok BIT OUTPUT', @ok = @StagingOk OUTPUT
-	IF @StagingOk = 0
-		BEGIN
-			PRINT 'O < ARQUIVO > INFORMADO NAO EXISTE NO BANCO '+ @BancoDadosGX +'!'
+	IF ( NOT EXISTS (SELECT 1 FROM SYS.OBJECTS WHERE NAME = 'Arquivo_Forn_Cli_Enquadramento_Tratado') )
+		BEGIN 
+			PRINT 'O < ARQUIVO > INFORMADO NAO EXISTE NESTE BANCO '+ @BancoDadosGX +'!'
 			RETURN
 		END
 
@@ -53,7 +44,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Forn_Cli_Enquadramento_Tratado SET
-		CPF_CNPJ = RTRIM(LTRIM(' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + '.dbo.fn_RemoveCaracteresNaoInteiros(CPF_CNPJ)))
+		CPF_CNPJ = rtrim(ltrim(dbo.FN_RemoveCaracteresNaoInteiros(CPF_CNPJ)))
 
 '
 
@@ -67,44 +58,20 @@ SELECT @CMD = '
 
 	IF(NOT EXISTS(SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects WHERE type = ''U'' AND name =''PessoaEnquadramento_MG''))
 	BEGIN
-		SELECT a.* INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Forn_Cli_Enquadramento_Tratado a WHERE 1=1
+		SELECT a.*,1 as Flag INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Forn_Cli_Enquadramento_Tratado a
+
+		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG	ADD	Pessoa_DocIdentificador	varchar (20)	NULL
+		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG	ADD	Municipio_Codigo	int
+		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG	ADD	Estado_Codigo	varchar(10)
+		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG	ADD	Data_Cadastro	date
+		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG	ADD	Ocorrencia	VARCHAR(500)
 	END
 
 '
 
 EXEC sp_executesql @CMD
 
-PRINT '=========================================================================================='
-PRINT ' Adicionando colunas na tabela PessoaEnquadramento_MG '
-PRINT '=========================================================================================='
-
-SELECT @CMD = '
-
-	IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col, ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj
-					WHERE col.object_id = obj.object_id AND col.name = ''Pessoa_DocIdentificador'' AND obj.name = ''PessoaEnquadramento_MG''))
-		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG ADD Pessoa_DocIdentificador varchar(20) NULL
-
-	IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col, ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj
-					WHERE col.object_id = obj.object_id AND col.name = ''Municipio_Codigo'' AND obj.name = ''PessoaEnquadramento_MG''))
-		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG ADD Municipio_Codigo int NULL
-
-	IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col, ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj
-					WHERE col.object_id = obj.object_id AND col.name = ''Estado_Codigo'' AND obj.name = ''PessoaEnquadramento_MG''))
-		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG ADD Estado_Codigo varchar(10) NULL
-
-	IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col, ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj
-					WHERE col.object_id = obj.object_id AND col.name = ''Data_Cadastro'' AND obj.name = ''PessoaEnquadramento_MG''))
-		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG ADD Data_Cadastro date NULL
-
-	IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col, ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj
-					WHERE col.object_id = obj.object_id AND col.name = ''Ocorrencia'' AND obj.name = ''PessoaEnquadramento_MG''))
-		ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG ADD Ocorrencia VARCHAR(500) NULL
-
-'
-
-EXEC sp_executesql @CMD
-
-PRINT '=========================================================================================='
+PRINT '==========================================================================================' 
 PRINT ' Atualiza Flag = 0 na PessoaEnquadramento_MG CPF/CNPJ em BRANCO ' 
 PRINT '=========================================================================================='
 

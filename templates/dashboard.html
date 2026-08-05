@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DE x PARA - Dashboard</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
     <style>
         /* Estilos para os cards de progresso das categorias */
@@ -79,6 +79,195 @@
             justify-content: space-between;
             font-size: 12px;
             color: #6c757d;
+        }
+
+        .categoria-data {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eef2f7;
+            font-size: 12px;
+            color: #0f766e;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .categoria-data.pendente {
+            color: #9ca3af;
+        }
+
+        .categoria-data i {
+            font-size: 11px;
+        }
+
+        /* Indicador layouts obrigatórios — compacto + tooltip */
+        .layouts-obrig-banner {
+            margin: 12px 0 4px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+            border: 1px solid #e5e7eb;
+            overflow: visible;
+        }
+        .layouts-obrig-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 10px;
+            overflow: visible;
+        }
+        .layouts-obrig-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #6b7280;
+            margin-right: 4px;
+        }
+        .layouts-obrig-chip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #111827;
+            cursor: default;
+            white-space: nowrap;
+            overflow: visible;
+            z-index: 1;
+        }
+        .layouts-obrig-chip:hover {
+            z-index: 50;
+        }
+        .layouts-obrig-chip.ok {
+            background: #f0fdf4;
+            border-color: #86efac;
+            color: #166534;
+        }
+        .layouts-obrig-chip.falta {
+            background: #fffbeb;
+            border-color: #fcd34d;
+            color: #92400e;
+        }
+        .layouts-obrig-chip.vazio {
+            background: #f3f4f6;
+            border-color: #e5e7eb;
+            color: #9ca3af;
+            font-weight: 500;
+        }
+        .layouts-obrig-chip.vermelho {
+            background: #fef2f2;
+            border-color: #f87171;
+            color: #991b1b;
+            box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.15);
+        }
+        .layouts-obrig-chip.amarelo {
+            background: #fffbeb;
+            border-color: #fbbf24;
+            color: #92400e;
+            box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.18);
+        }
+        .layouts-obrig-chip.verde {
+            background: #f0fdf4;
+            border-color: #4ade80;
+            color: #166534;
+            box-shadow: 0 0 0 1px rgba(22, 163, 74, 0.15);
+        }
+        .layouts-obrig-chip.vermelho .layouts-obrig-pct,
+        .layouts-obrig-chip.amarelo .layouts-obrig-pct,
+        .layouts-obrig-chip.verde .layouts-obrig-pct {
+            font-weight: 800;
+            font-size: 0.95rem;
+        }
+        .layouts-obrig-pct {
+            font-variant-numeric: tabular-nums;
+            font-size: 0.9rem;
+        }
+        .layouts-obrig-tip {
+            display: none;
+            position: absolute;
+            left: 50%;
+            top: calc(100% + 8px);
+            bottom: auto;
+            transform: translateX(-50%);
+            min-width: 220px;
+            max-width: 300px;
+            max-height: min(60vh, 360px);
+            overflow-y: auto;
+            padding: 10px 12px;
+            background: #111827;
+            color: #f9fafb;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            line-height: 1.4;
+            z-index: 40;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            white-space: normal;
+            pointer-events: none;
+        }
+        .layouts-obrig-tip::after {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            top: auto;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-bottom-color: #111827;
+            border-top-color: transparent;
+        }
+        .layouts-obrig-chip:hover .layouts-obrig-tip {
+            display: block;
+        }
+        .layouts-obrig-tip strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+        .layouts-obrig-tip .tip-sec {
+            margin-top: 8px;
+            padding-top: 6px;
+            border-top: 1px solid #374151;
+            color: #d1d5db;
+            font-size: 0.75rem;
+        }
+        .layouts-obrig-tip ul {
+            margin: 0;
+            padding-left: 16px;
+        }
+        .layouts-obrig-tip li {
+            margin: 2px 0;
+        }
+        .layouts-obrig-tip li.opc {
+            color: #9ca3af;
+        }
+        .layouts-obrig-cta-mini {
+            margin-left: auto;
+            font-size: 0.8rem;
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .layouts-obrig-cta-mini:hover {
+            text-decoration: underline;
+        }
+
+        .quadro-data-disponivel {
+            margin: 0 0 12px;
+            font-size: 0.85rem;
+            color: #0f766e;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .quadro-data-disponivel.pendente {
+            color: #9ca3af;
         }
 
         .categoria-link {
@@ -274,6 +463,52 @@
             </div>
         </div>
 
+        {% if status_layouts_obrigatorios and status_layouts_obrigatorios.ativo %}
+        <div class="layouts-obrig-banner">
+            <div class="layouts-obrig-row">
+                <span class="layouts-obrig-label"><i class="fas fa-file-import"></i> Importação</span>
+                {% for esc in status_layouts_obrigatorios.escopos %}
+                <div class="layouts-obrig-chip {{ esc.cor|default('verde') }}{% if esc.sem_obrigatorios and not esc.layouts_opcionais %} vazio{% endif %}">
+                    <span>{{ esc.nome }}</span>
+                    <span class="layouts-obrig-pct">{{ esc.percentual|default(100) }}%</span>
+                    <div class="layouts-obrig-tip">
+                        <strong>{{ esc.nome }} — {{ esc.percentual|default(100) }}%</strong>
+                        {% if esc.layouts %}
+                        <div>Obrigatórios:</div>
+                        <ul>
+                            {% for lay in esc.layouts %}
+                            <li>
+                                {% if lay.importado %}✓{% else %}✗{% endif %}
+                                {{ lay.nome }}
+                                {% if not lay.importado %} (pendente){% endif %}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% elif esc.sem_obrigatorios %}
+                        <div>Nenhum layout obrigatório neste escopo.</div>
+                        {% endif %}
+                        {% if esc.layouts_opcionais %}
+                        <div class="tip-sec">Opcionais (não entram no %):</div>
+                        <ul>
+                            {% for lay in esc.layouts_opcionais %}
+                            <li class="opc">
+                                {% if lay.importado %}✓{% else %}○{% endif %}
+                                {{ lay.nome }}
+                                {% if not lay.importado %} (não importado){% endif %}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% if status_layouts_obrigatorios.total_pendentes > 0 and importacao_liberada_projeto|default(true) %}
+                <a href="{{ url_for('importacao.index') }}" class="layouts-obrig-cta-mini">Enviar arquivo →</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Cards de Total Geral -->
         <div class="categorias-progresso">
             <!-- Card Total Geral -->
@@ -330,6 +565,17 @@
                     <span>Progresso da Categoria</span>
                     <span>{{ percentual }}% Concluído</span>
                 </div>
+                {% if datas_blocos is defined and datas_blocos.get(escopo) and datas_blocos[escopo].data %}
+                <div class="categoria-data" title="{% if datas_blocos[escopo].layout %}Layout: {{ datas_blocos[escopo].layout }}{% endif %}{% if datas_blocos[escopo].ultima %} · Última importação: {{ datas_blocos[escopo].ultima }}{% endif %}">
+                    <i class="fas fa-calendar-check"></i>
+                    Disponível desde {{ datas_blocos[escopo].data }}
+                </div>
+                {% else %}
+                <div class="categoria-data pendente">
+                    <i class="fas fa-clock"></i>
+                    Aguardando importação do layout
+                </div>
+                {% endif %}
             </a>
             {% endfor %}
         </div>
@@ -341,6 +587,11 @@
             <div class="content-header">
                 <h2>Pessoa</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
+                {% if datas_blocos is defined and datas_blocos.get('PESSOA') and datas_blocos['PESSOA'].data %}
+                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['PESSOA'].data }}</p>
+                {% else %}
+                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
+                {% endif %}
             </div>
             <table class="status-table">
                 <thead>
@@ -375,6 +626,11 @@
             <div class="content-header">
                 <h2>Geral</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
+                {% if datas_blocos is defined and datas_blocos.get('GERAL') and datas_blocos['GERAL'].data %}
+                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['GERAL'].data }}</p>
+                {% else %}
+                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
+                {% endif %}
             </div>
             <table class="status-table">
                 <thead>
@@ -427,6 +683,11 @@
             <div class="content-header">
                 <h2>Produto</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
+                {% if datas_blocos is defined and datas_blocos.get('PRODUTOS') and datas_blocos['PRODUTOS'].data %}
+                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['PRODUTOS'].data }}</p>
+                {% else %}
+                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
+                {% endif %}
             </div>
             <table class="status-table">
                 <thead>
@@ -453,6 +714,11 @@
             <div class="content-header">
                 <h2>Veículos</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
+                {% if datas_blocos is defined and datas_blocos.get('VEICULOS') and datas_blocos['VEICULOS'].data %}
+                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['VEICULOS'].data }}</p>
+                {% else %}
+                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
+                {% endif %}
             </div>
             <table class="status-table">
                 <thead>
@@ -479,6 +745,11 @@
             <div class="content-header">
                 <h2>Financeiro</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
+                {% if datas_blocos is defined and datas_blocos.get('FINANCEIRO') and datas_blocos['FINANCEIRO'].data %}
+                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['FINANCEIRO'].data }}</p>
+                {% else %}
+                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
+                {% endif %}
             </div>
             <table class="status-table">
                 <thead>
@@ -505,6 +776,11 @@
             <div class="content-header">
                 <h2>Contabilidade</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
+                {% if datas_blocos is defined and datas_blocos.get('CONTABILIDADE') and datas_blocos['CONTABILIDADE'].data %}
+                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['CONTABILIDADE'].data }}</p>
+                {% else %}
+                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
+                {% endif %}
             </div>
             <table class="status-table">
                 <thead>
@@ -594,7 +870,7 @@
         window.progresso_categorias = {{ progresso_categorias | tojson | safe }};
     </script>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260715"></script>
     <script>
     // DEBUG: Verificar se as variáveis estão sendo carregadas
     console.log("=== DEBUG DASHBOARD ===");
@@ -632,6 +908,18 @@
             behavior: 'smooth'
         });
     }
+
+    // Inicia a verificação somente depois que o dashboard e seus recursos abriram.
+    window.addEventListener('load', function() {
+        window.setTimeout(function() {
+            fetch('{{ url_for("dashboard.verificar_notificacoes") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).catch(function(error) {
+                console.warn('Não foi possível verificar notificações por e-mail:', error);
+            });
+        }, 1000);
+    });
     </script>
 </body>
 </html>

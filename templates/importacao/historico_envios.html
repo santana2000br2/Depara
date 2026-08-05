@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="max-width:1100px;margin:24px auto;padding:0 16px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
+        <div>
+            <h2 style="margin:0 0 6px;"><i class="fas fa-history"></i> Histórico de envios</h2>
+            <p style="margin:0;color:#6b7280;">
+                Projeto: <strong>{{ projeto_nome or '—' }}</strong>
+                — cada envio é registrado com data e hora (reenvios também).
+            </p>
+        </div>
+        <a href="{{ url_for('importacao.index') if importacao_liberada_projeto else url_for('validador_estrutura.index') }}"
+           class="btn-export" style="text-decoration:none;">
+            <i class="fas fa-file-upload"></i> Novo envio
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }}" style="margin-bottom:14px;">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% if historico %}
+    <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:auto;">
+        <table class="compact-table" style="width:100%;margin:0;">
+            <thead>
+                <tr>
+                    <th>Data / Hora</th>
+                    <th>Arquivo</th>
+                    <th>Layout</th>
+                    <th>Modo</th>
+                    <th>Linhas</th>
+                    <th>Erros</th>
+                    <th>Avisos</th>
+                    <th>Importação</th>
+                    <th>Usuário</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in historico %}
+                <tr>
+                    <td><strong>{{ item.DataEnvioFmt }}</strong></td>
+                    <td>{{ item.NomeArquivo or '—' }}</td>
+                    <td>{{ item.NomeLayout or '—' }}</td>
+                    <td>
+                        {% if item.Modo == 'validacao' %}
+                        <span style="color:#0d9488;">Validação</span>
+                        {% else %}
+                        <span style="color:#2563eb;">Importação</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.TotalLinhas }}</td>
+                    <td style="color:{% if item.TotalErros %}#dc2626{% else %}#16a34a{% endif %};">
+                        {{ item.TotalErros }}
+                    </td>
+                    <td>{{ item.TotalAvisos }}</td>
+                    <td>
+                        {% if item.ImportacaoRealizada %}
+                        <span style="color:#16a34a;font-weight:600;">Sim</span>
+                        {% else %}
+                        <span style="color:#9ca3af;">Não</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.UsuarioNome or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p style="margin-top:10px;color:#9ca3af;font-size:0.85rem;">
+        Exibindo os {{ historico|length }} envio(s) mais recentes deste projeto.
+    </p>
+    {% else %}
+    <div style="background:#fff;border-radius:8px;padding:40px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.08);">
+        <i class="fas fa-inbox" style="font-size:2rem;color:#d1d5db;margin-bottom:10px;"></i>
+        <h3 style="margin:0 0 6px;">Nenhum envio registrado</h3>
+        <p style="margin:0;color:#6b7280;">Os próximos uploads deste projeto aparecerão aqui.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

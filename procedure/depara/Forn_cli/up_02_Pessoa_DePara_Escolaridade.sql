@@ -3,6 +3,8 @@
 -- Destino : Escolaridade_DePara
 -- Procedure: up_02_Pessoa_DePara_Escolaridade
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

@@ -52,6 +52,66 @@ CONFIG_PROCEDURES = {
         'destino': 'PessoaContato_MG',
         'requer_wf': False,
     },
+    'produto': {
+        'procedure': 'up_01_Extrai_Produto_gx',
+        'procedures': [
+            'up_01_Extrai_Produto_gx',
+            'up_02_Atualiza_Referencia_Produto_gx',
+            'up_03_Trata_Duplicidade_Produto_gx',
+            'up_04_Atualiza_Ocorrencia_Produto_gx',
+        ],
+        'staging': 'Arquivo_Produto_Tratado',
+        'destino': 'Produto_MG',
+        'requer_wf': True,
+    },
+    'produto_estoque': {
+        'procedure': 'up_01_Extrai_ProdutoEstoque_gx',
+        'staging': 'Arquivo_ProdutoEstoque_Tratado',
+        'destino': 'ProdutoEstoque_MG',
+        'requer_wf': False,
+    },
+    'prod_locacao': {
+        'procedure': 'up_01_Extrai_ProdLocacao_gx',
+        'staging': 'Arquivo_ProdLocacao_Tratado',
+        'destino': 'ProdLocacao_MG',
+        'requer_wf': True,
+    },
+    'movimento_estoque': {
+        'procedure': 'up_01_Extrai_MovimentoEstoque_gx',
+        'staging': 'Arquivo_MovimentoEstoque_Tratado',
+        'destino': 'MovimentoEstoque_MG',
+        'requer_wf': True,
+    },
+    'veiculo': {
+        'procedure': 'up_01_Extrai_Veiculo_gx',
+        'staging': 'Arquivo_Veiculo_Tratado',
+        'destino': 'Veiculo_MG',
+        'requer_wf': True,
+    },
+    'fseg_cab': {
+        'procedure': 'up_01_Extrai_Fseg_Cab_gx',
+        'staging': 'Arquivo_FSeg_Cab_Tratado',
+        'destino': 'Ficha_Cab_MG',
+        'requer_wf': True,
+    },
+    'fseg_prd': {
+        'procedure': 'up_01_Extrai_Fseg_Prd_gx',
+        'staging': 'Arquivo_FSeg_Prd_Tratado',
+        'destino': 'Ficha_Prd_MG',
+        'requer_wf': True,
+    },
+    'fseg_srv': {
+        'procedure': 'up_01_Extrai_Fseg_Srv_gx',
+        'staging': 'Arquivo_FSeg_Srv_Tratado',
+        'destino': 'Ficha_Srv_MG',
+        'requer_wf': True,
+    },
+    'financeiro': {
+        'procedure': 'up_01_Extrai_Financeiro_gx',
+        'staging': 'Arquivo_Financeiro_Tratado',
+        'destino': 'Titulo_MG',
+        'requer_wf': True,
+    },
 }
 
 # Layouts cujas procedures legadas fazem SELECT A.*, 1 AS Flag (colide com Flag da staging).
@@ -59,6 +119,15 @@ LAYOUTS_PRECRIAR_DESTINO = frozenset({
     'forn_cli_endereco',
     'forn_cli_documento',
     'forn_cli_enquadramento',
+    'produto',
+    'produto_estoque',
+    'prod_locacao',
+    'movimento_estoque',
+    'veiculo',
+    'fseg_cab',
+    'fseg_prd',
+    'fseg_srv',
+    'financeiro',
 })
 
 # Colunas que as procedures legadas só criam dentro do IF NOT EXISTS (SELECT INTO).
@@ -73,6 +142,139 @@ COLUNAS_EXTRA_POS_PRECRIAR = {
         ('Estado_Codigo', 'varchar(10) NULL'),
         ('Data_Cadastro', 'date NULL'),
         ('Ocorrencia', 'VARCHAR(500) NULL'),
+    ],
+    'produto': [
+        ('Empresa_Codigo', 'int NULL'),
+        ('PRODUTO_REFERENCIA_Ajustado', 'nvarchar(510) NULL'),
+        ('PRODUTO_REFERENCIATRANS', 'nvarchar(510) NULL'),
+        ('Produto_NCMCod', 'int NULL'),
+        ('Unidade', 'int NULL'),
+        ('TipoProduto', 'int NULL'),
+        ('GrupoProduto', 'int NULL'),
+        ('GrupoLucratividadeCodigo', 'int NULL'),
+        ('ProcedenciaCodigo', 'int NULL'),
+        ('ProdutoMarca_MarcaCod', 'int NULL'),
+        ('ProdutoPreco_TabelaPrecoCod_GA', 'int NULL'),
+        ('ProdutoPreco_TabelaPrecoCod_PP', 'int NULL'),
+        ('ProdutoPreco_TabelaPrecoCod_PS', 'int NULL'),
+        ('ProdutoPreco_TabelaPrecoCod_RP', 'int NULL'),
+        ('ProdutoPreco_TabelaPrecoCod_ES', 'int NULL'),
+        ('Produto_CodigoWF', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'produto_estoque': [
+        ('Emp_Ds', 'varchar(200) NULL'),
+        ('ProdutoEstoque_EmpresaCod', 'int NULL'),
+        ('ProdutoEstoque_EstoqueCod', 'int NULL'),
+        ('Produto_Codigo', 'int NULL'),
+        ('PRODUTO_REFERENCIA_Ajustado', 'varchar(30) NULL'),
+        ('PRODUTO_REFERENCIATRANS', 'varchar(30) NULL'),
+        ('ProdutoMarca_MarcaCod', 'varchar(30) NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'prod_locacao': [
+        ('ProdutoEstoque_EmpresaCod', 'int NULL'),
+        ('ProdutoEstoque_EstoqueCod', 'int NULL'),
+        ('ProdutoMarca_MarcaCod', 'int NULL'),
+        ('PRODUTO_REFERENCIA_Ajustado', 'nvarchar(510) NULL'),
+        ('PRODUTO_REFERENCIATRANS', 'nvarchar(510) NULL'),
+        ('Produto_CodigoWF', 'int NULL'),
+        ('ProdutoEstoqueLocalizacao_LocalProdutoCod', 'int NULL'),
+        ('ProdutoEstoqueLocalizacao_Tipo', 'char(1) NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'movimento_estoque': [
+        ('MovimentoEstoque_NaturezaOperacaoCod', 'int NULL'),
+        ('Estoque_CodigoWF', 'int NULL'),
+        ('Departamento_CodigoWF', 'int NULL'),
+        ('MovimentoEstoque_EmpresaCod', 'int NULL'),
+        ('Produto_CodigoWF', 'int NULL'),
+        ('Referencia', 'varchar(30) NULL'),
+        ('ProdutoMarca_ReferenciaAlfanumerico', 'varchar(30) NULL'),
+        ('ProdutoMarca_MarcaCod', 'int NULL'),
+        ('TipoProdutoCod', 'int NULL'),
+        ('mult', 'int NULL'),
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('MovimentoEstoque_PessoaCod', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'veiculo': [
+        # Colunas WF/derivadas
+        ('Ve_FabMod', 'varchar(10) NULL'),
+        ('Marca_CodigoWF', 'int NULL'),
+        ('ModeloVeiculoWF', 'int NULL'),
+        ('CorInternaWF', 'int NULL'),
+        ('CorExternaWF', 'int NULL'),
+        ('VeiculoAno', 'int NULL'),
+        ('Veiculo_Status', 'char(1) NULL'),
+        ('Empresa_Codigo', 'int NULL'),
+        ('VeiculoProprietario', 'int NULL'),
+        ('Veiculo_PessoaCodConcessionaria', 'int NULL'),
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('Veiculo_EstadoCod_Placa', 'char(2) NULL'),
+        ('Veiculo_MunicipioCod_Placa', 'int NULL'),
+        ('WMI_VIN', 'varchar(3) NULL'),
+        ('WMI_Fabricante', 'varchar(150) NULL'),
+        ('Maquina_Implemento', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+        # Colunas de origem opcionais (podem não vir no arquivo) usadas pela
+        # extração e pelas procedures De/Para — garantidas para evitar
+        # "Invalid column name" quando ausentes no layout.
+        ('CODIGO_LINHA', 'nvarchar(510) NULL'),
+        ('COR_INTERNA_CODIGO', 'varchar(20) NULL'),
+        ('COR_INTERNA_DESCRICAO', 'varchar(50) NULL'),
+        ('ESTADO_PLACA', 'varchar(2) NULL'),
+        ('MUNICIPIO_PLACA', 'varchar(100) NULL'),
+        ('PLACA', 'varchar(10) NULL'),
+        ('CPF_CNPJ', 'varchar(20) NULL'),
+        ('KM', 'varchar(20) NULL'),
+        ('RENAVAM', 'varchar(20) NULL'),
+        ('SERIE', 'varchar(50) NULL'),
+        ('DATA_VENDA', 'varchar(20) NULL'),
+    ],
+    'fseg_cab': [
+        ('Veiculo_Codigo', 'int NULL'),
+        ('Empresa_Codigo', 'int NULL'),
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('Pessoa_Codigo', 'int NULL'),
+        ('TipoOSCod', 'int NULL'),
+        ('Maquina_Implemento', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+        # Nome sem acento usado na procedure legada
+        ('DATA_LIBERACAO', 'varchar(20) NULL'),
+    ],
+    'fseg_prd': [
+        ('Veiculo_Codigo', 'int NULL'),
+        ('Produto_Codigo', 'int NULL'),
+        ('ProdutoMarca_MarcaCod', 'int NULL'),
+        ('PRODUTO_REFERENCIA_Ajustado', 'nvarchar(510) NULL'),
+        ('PRODUTO_REFERENCIATRANS', 'nvarchar(510) NULL'),
+        ('Empresa_Codigo', 'int NULL'),
+        ('TipoOSCod', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'fseg_srv': [
+        ('Veiculo_Codigo', 'int NULL'),
+        ('TMO_CodigoWF', 'int NULL'),
+        ('TMO_DescricaoWF', 'varchar(50) NULL'),
+        ('Empresa_Codigo', 'int NULL'),
+        ('TipoOSCod', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'financeiro': [
+        ('Empresa_Codigo', 'int NULL'),
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('Pessoa_Codigo', 'int NULL'),
+        ('NaturezaOperacao_CodigoWF', 'int NULL'),
+        ('TipoTitulo_CodigoWF', 'int NULL'),
+        ('AgenteCobrador_CodigoWF', 'int NULL'),
+        ('ContaGerencial_CodigoWF', 'int NULL'),
+        ('Departamento_CodigoWF', 'int NULL'),
+        ('TipoCobranca_CodigoWF', 'int NULL'),
+        ('Banco_CodigoWF', 'int NULL'),
+        ('Titulo_NSU', 'varchar(20) NULL'),
+        ('TITULO_NUMERO_new', 'nvarchar(510) NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
     ],
 }
 
@@ -157,10 +359,29 @@ def executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf=None, dd
 
     from utils.importacao_pessoa_mg_dependencia import (
         LAYOUTS_DEPENDEM_PESSOA_MG,
+        LAYOUTS_PESSOA_MG_OPCIONAL,
         validar_staging_depende_pessoa_mg,
     )
-    if tipo_layout in LAYOUTS_DEPENDEM_PESSOA_MG:
+    from utils.importacao_produto_mg_dependencia import (
+        LAYOUTS_DEPENDEM_PRODUTO_MG,
+        validar_staging_depende_produto_mg,
+    )
+    from utils.importacao_veiculo_mg_dependencia import (
+        LAYOUTS_DEPENDEM_VEICULO_MG,
+        validar_staging_depende_veiculo_mg,
+    )
+    from utils.importacao_ficha_cab_mg_dependencia import (
+        LAYOUTS_DEPENDEM_FICHA_CAB_MG,
+        validar_staging_depende_ficha_cab_mg,
+    )
+    if tipo_layout in LAYOUTS_DEPENDEM_PESSOA_MG and tipo_layout not in LAYOUTS_PESSOA_MG_OPCIONAL:
         validar_staging_depende_pessoa_mg(cursor, cfg['staging'])
+    if tipo_layout in LAYOUTS_DEPENDEM_PRODUTO_MG:
+        validar_staging_depende_produto_mg(cursor, cfg['staging'])
+    if tipo_layout in LAYOUTS_DEPENDEM_VEICULO_MG:
+        validar_staging_depende_veiculo_mg(cursor, cfg['staging'])
+    if tipo_layout in LAYOUTS_DEPENDEM_FICHA_CAB_MG:
+        validar_staging_depende_ficha_cab_mg(cursor, cfg['staging'])
 
     dropar_tabela_se_existir(cursor, banco_gx, destino)
 
@@ -194,4 +415,57 @@ def executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf=None, dd
         )
 
     logger.info("Procedure dbo.%s concluída → %s", proc, destino)
+    return destino
+
+
+def executar_pipeline_produto(cursor, banco_gx, banco_wf):
+    """
+    Executa o pipeline de extração Produto (up_01 a up_04) após staging carregada.
+    """
+    tipo_layout = 'produto'
+    cfg = obter_config_procedure(tipo_layout)
+    if not cfg:
+        raise ValueError("Layout produto sem configuração de procedures.")
+
+    banco_gx = _validar_identificador_sql(banco_gx.strip())
+    banco_wf = _validar_identificador_sql((banco_wf or '').strip())
+    if not banco_wf:
+        raise ValueError("Pipeline Produto exige @BancoWF.")
+
+    staging = cfg['staging']
+    destino = cfg['destino']
+
+    if not _tabela_existe(cursor, staging):
+        raise RuntimeError(
+            f"Tabela de staging {staging} não existe em {banco_gx}. "
+            "A carga do arquivo deve ocorrer antes das procedures."
+        )
+
+    dropar_tabela_se_existir(cursor, banco_gx, destino)
+    precriar_destino_antes_procedure(cursor, banco_gx, staging, destino)
+    colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
+    if colunas_extra:
+        garantir_colunas_extra(
+            cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
+        )
+
+    procedures = cfg.get('procedures') or [cfg['procedure']]
+    for proc in procedures:
+        if not procedure_existe(cursor, proc):
+            raise RuntimeError(
+                f"Procedure dbo.{proc} não encontrada em {banco_gx}. "
+                "Instale os scripts em procedure/Produto/ no banco DadosGX "
+                "e execute up_Replace_Name_DadosGx_Procedures com o nome do banco."
+            )
+        logger.info("Executando dbo.%s (@BancoDadosGX=%s, @BancoWF=%s)", proc, banco_gx, banco_wf)
+        _executar(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
+
+    if not _tabela_existe(cursor, destino):
+        n_staging = _contar_staging(cursor, staging)
+        raise RuntimeError(
+            f"Pipeline Produto concluiu, mas {destino} não existe em {banco_gx}. "
+            f"Staging possui {n_staging} registro(s)."
+        )
+
+    logger.info("Pipeline Produto concluído → %s", destino)
     return destino

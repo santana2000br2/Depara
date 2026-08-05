@@ -3,6 +3,8 @@
 -- Destino : Municipio_DePara
 -- Procedure: up_05_Pessoa_DePara_Municipio
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

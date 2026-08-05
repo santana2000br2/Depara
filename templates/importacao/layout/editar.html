@@ -15,7 +15,10 @@
 
     <div class="layouts-form-header">
         <h1><i class="fas fa-edit"></i> Editar Layout</h1>
-        <p>Altere as informações e colunas do layout <strong>{{ layout.NomeLayout }}</strong>.</p>
+        <p>Altere as informações e colunas do layout <strong>{{ layout.NomeLayout }}</strong>. Ao salvar, o estado atual é guardado no histórico de versões.</p>
+        <a href="{{ url_for('layout.versoes_layout', layout_id=layout.LayoutID) }}" class="layouts-btn-secondary" style="margin-top:10px;display:inline-flex;">
+            <i class="fas fa-history"></i> Ver histórico de versões
+        </a>
     </div>
 
     <form id="layoutForm" method="POST">
@@ -34,6 +37,25 @@
                     <label for="descricao">Descrição</label>
                     <textarea id="descricao" name="descricao" class="layouts-form-control" rows="3">{{ layout.Descricao or '' }}</textarea>
                 </div>
+                <div class="layouts-form-row-escopo">
+                    <div class="layouts-form-group">
+                        <label for="tipo_escopo">Escopo</label>
+                        <select id="tipo_escopo" name="tipo_escopo" class="layouts-form-control">
+                            <option value="">— Sem escopo —</option>
+                            {% for codigo, nome in tipos_escopo.items() %}
+                            <option value="{{ codigo }}" {% if layout.TipoEscopo == codigo %}selected{% endif %}>{{ nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="layouts-form-group layouts-form-group-check">
+                        <label for="obrigatorio_escopo">Obrigatório no escopo</label>
+                        <div class="layouts-checkbox-wrap layouts-checkbox-wrap-lg">
+                            <input type="checkbox" id="obrigatorio_escopo" name="obrigatorio_escopo" value="1"
+                                {% if layout.ObrigatorioNoEscopo %}checked{% endif %}>
+                            <span class="layouts-check-hint">Exige este layout quando o escopo estiver ativo no projeto</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -45,9 +67,6 @@
             <div class="layouts-form-card-body">
                 <div class="layouts-colunas-header">
                     <span>{{ colunas|length }} coluna(s) configurada(s)</span>
-                    <button type="button" id="btn-adicionar-coluna" class="layouts-btn-add-col">
-                        <i class="fas fa-plus"></i> Adicionar Coluna
-                    </button>
                 </div>
                 <div id="colunas-container">
                     {% for coluna in colunas %}
@@ -93,6 +112,11 @@
                         </div>
                     </div>
                     {% endfor %}
+                </div>
+                <div class="layouts-colunas-footer">
+                    <button type="button" id="btn-adicionar-coluna" class="layouts-btn-add-col">
+                        <i class="fas fa-plus"></i> Adicionar Coluna
+                    </button>
                 </div>
             </div>
         </div>

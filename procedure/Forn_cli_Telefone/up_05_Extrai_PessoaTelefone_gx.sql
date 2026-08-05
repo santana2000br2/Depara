@@ -3,6 +3,8 @@
 -- Staging : Arquivo_Forn_Cli_Telefone_Tratado
 -- Destino : PessoaTelefone_MG
 -- Procedure: up_05_Extrai_PessoaTelefone_gx (@BancoDadosGX, @DDDPadrao char(2))
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

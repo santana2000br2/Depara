@@ -5,6 +5,10 @@ from flask import (
 from db.connection import conectar_banco
 from logger import logger
 from auth.security import hash_senha
+from utils.credential_crypto import preparar_login_para_banco, revelar_login_banco
+from utils.usuario_login_db import garantir_coluna_login_hash
+from utils.password_reset import garantir_coluna_email, email_valido
+from utils.login_bloqueio import garantir_colunas_bloqueio_login, desbloquear_conta
 
 usuarios_bp = Blueprint("usuarios", __name__)
 
@@ -23,28 +27,35 @@ def gerenciar_usuarios():
             return render_template("usuarios.html", usuarios=[], projetos=[])
 
         cursor = conn.cursor()
+        garantir_coluna_login_hash(cursor, conn)
+        garantir_coluna_email(cursor, conn)
+        garantir_colunas_bloqueio_login(cursor, conn)
 
         # Buscar usuários
         cursor.execute("""
             SELECT 
                 u.UsuarioID,
                 u.UsuarioNome,
+                u.Email,
                 u.Ativo,
-                u.Adm
+                u.Adm,
+                u.ContaBloqueada
             FROM Usuarios u
-            ORDER BY u.UsuarioNome
+            ORDER BY u.UsuarioID
         """)
         
         usuarios_raw = cursor.fetchall()
         
-        # Converter para lista de dicionários
+        # Converter para lista de dicionários (nome descriptografado só na memória/UI)
         usuarios_list = []
         for user in usuarios_raw:
             usuario_dict = {
                 'UsuarioID': user.UsuarioID,
-                'UsuarioNome': user.UsuarioNome,
+                'UsuarioNome': revelar_login_banco(user.UsuarioNome),
+                'Email': (user.Email or "").strip(),
                 'Ativo': user.Ativo,
                 'Adm': user.Adm,
+                'ContaBloqueada': bool(getattr(user, 'ContaBloqueada', False)),
                 'projetos_associados': []
             }
             
@@ -62,6 +73,8 @@ def gerenciar_usuarios():
             usuario_dict['projetos_associados'] = [proj.NomeProjeto for proj in projetos_assoc]
             
             usuarios_list.append(usuario_dict)
+
+        usuarios_list.sort(key=lambda u: (u['UsuarioNome'] or '').lower())
 
         # Buscar todos os projetos para o formulário
         cursor.execute("""
@@ -106,14 +119,30 @@ def salvar_usuario():
 
     data = request.get_json()
     usuario_id = data.get("usuario_id")
-    usuario_nome = data.get("usuario_nome")
+    usuario_nome = (data.get("usuario_nome") or "").strip()
+    email = (data.get("email") or "").strip()
     ativo = data.get("ativo")
     senha = data.get("senha")
     adm = data.get("adm")
+    desbloquear = bool(data.get("desbloquear_senha"))
     projetos_selecionados = data.get("projetos", [])
 
-    print(f"DEBUG: Dados recebidos - usuario_id: {usuario_id}, usuario_nome: {usuario_nome}, ativo: {ativo}, adm: {adm}, projetos: {projetos_selecionados}")
-    print(f"DEBUG: Senha recebida: {'[PRESENTE]' if senha else '[AUSENTE]'}")
+    if not usuario_nome:
+        return jsonify({"status": "error", "message": "Nome do usuário é obrigatório"}), 400
+
+    if email and not email_valido(email):
+        return jsonify({"status": "error", "message": "E-mail inválido"}), 400
+
+    nome_cifrado, nome_hash = preparar_login_para_banco(usuario_nome)
+
+    logger.info(
+        "Salvando usuário id=%s ativo=%s adm=%s senha_alterada=%s projetos=%s",
+        usuario_id,
+        ativo,
+        adm,
+        bool(senha),
+        len(projetos_selecionados or []),
+    )
 
     conn = None
     cursor = None
@@ -123,107 +152,101 @@ def salvar_usuario():
             return jsonify({"status": "error", "message": "Erro de conexão com o banco"}), 500
 
         cursor = conn.cursor()
+        garantir_coluna_login_hash(cursor, conn)
+        garantir_coluna_email(cursor, conn)
+        garantir_colunas_bloqueio_login(cursor, conn)
+
+        # Unicidade pelo hash (não pelo texto cifrado)
+        if usuario_id:
+            cursor.execute(
+                """
+                SELECT TOP 1 UsuarioID FROM Usuarios
+                WHERE UsuarioNomeHash = ? AND UsuarioID <> ?
+                """,
+                (nome_hash, int(usuario_id)),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT TOP 1 UsuarioID FROM Usuarios
+                WHERE UsuarioNomeHash = ?
+                """,
+                (nome_hash,),
+            )
+        if cursor.fetchone():
+            return jsonify({
+                "status": "error",
+                "message": "Já existe um usuário com este login.",
+            }), 400
 
         if usuario_id:  # EDITANDO usuário existente
             usuario_id = int(usuario_id)
-            print(f"DEBUG: Editando usuário ID: {usuario_id}")
-            
-            if senha:  # Se senha foi fornecida, atualiza APENAS o SenhaHash com bcrypt
-                print(f"DEBUG: Gerando hash bcrypt para a senha...")
+
+            if senha:
                 senha_hash = hash_senha(senha)
-                print(f"DEBUG: Hash bcrypt gerado (primeiros 50 chars): {str(senha_hash)[:50]}...")
-                
                 cursor.execute("""
-                    UPDATE Usuarios 
-                    SET UsuarioNome=?, Ativo=?, SenhaHash=?, Adm=?
+                    UPDATE Usuarios
+                    SET UsuarioNome=?, UsuarioNomeHash=?, Email=?, Ativo=?, SenhaHash=?, Adm=?
                     WHERE UsuarioID=?
-                """, (usuario_nome, ativo, senha_hash, adm, usuario_id))
-                print(f"DEBUG: Query UPDATE executada para usuário {usuario_id}")
-                
-                # Verificar se a atualização foi bem-sucedida
-                cursor.execute("SELECT SenhaHash FROM Usuarios WHERE UsuarioID = ?", (usuario_id,))
-                resultado = cursor.fetchone()
-                if resultado:
-                    print(f"DEBUG: SenhaHash após update: {resultado.SenhaHash}")
-                else:
-                    print(f"DEBUG: Usuário não encontrado após update")
-                    
-            else:  # Se não foi fornecida senha, mantém a senha atual
-                print(f"DEBUG: Nenhuma senha fornecida, mantendo SenhaHash atual")
+                """, (nome_cifrado, nome_hash, email or None, ativo, senha_hash, adm, usuario_id))
+                # Nova senha limpa o bloqueio
+                desbloquear_conta(cursor, None, usuario_id)
+            else:
                 cursor.execute("""
-                    UPDATE Usuarios 
-                    SET UsuarioNome=?, Ativo=?, Adm=?
+                    UPDATE Usuarios
+                    SET UsuarioNome=?, UsuarioNomeHash=?, Email=?, Ativo=?, Adm=?
                     WHERE UsuarioID=?
-                """, (usuario_nome, ativo, adm, usuario_id))
-                print(f"DEBUG: Dados atualizados sem senha para usuário {usuario_id}")
+                """, (nome_cifrado, nome_hash, email or None, ativo, adm, usuario_id))
+                if desbloquear:
+                    desbloquear_conta(cursor, None, usuario_id)
 
             # Atualizar projetos associados
             cursor.execute("DELETE FROM UsuarioProjeto WHERE UsuarioID = ?", (usuario_id,))
-            print(f"DEBUG: Projetos antigos removidos para usuário {usuario_id}")
-            
+
             for projeto_id in projetos_selecionados:
                 projeto_id_int = int(projeto_id)
                 cursor.execute(
                     "INSERT INTO UsuarioProjeto (UsuarioID, ProjetoID) VALUES (?, ?)",
                     (usuario_id, projeto_id_int),
                 )
-                print(f"DEBUG: Projeto {projeto_id_int} associado ao usuário {usuario_id}")
 
         else:  # NOVO usuário
-            print("DEBUG: Criando novo usuário")
             if not senha:
                 return jsonify({
                     "status": "error",
                     "message": "Senha é obrigatória para novo usuário",
                 }), 400
 
-            # Para novo usuário, criar APENAS SenhaHash com bcrypt
             senha_hash = hash_senha(senha)
 
-            # Inserir na tabela Usuarios (APENAS SenhaHash)
             cursor.execute("""
-                INSERT INTO Usuarios (UsuarioNome, Ativo, SenhaHash, Adm)
-                VALUES (?, ?, ?, ?)
-            """, (usuario_nome, ativo, senha_hash, adm))
-            print(f"DEBUG: Usuário {usuario_nome} inserido na tabela Usuarios com SenhaHash (bcrypt)")
+                INSERT INTO Usuarios (UsuarioNome, UsuarioNomeHash, Email, Ativo, SenhaHash, Adm)
+                OUTPUT INSERTED.UsuarioID
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (nome_cifrado, nome_hash, email or None, ativo, senha_hash, adm))
 
-            # Obter o ID do novo usuário
-            cursor.execute("SELECT MAX(UsuarioID) FROM Usuarios WHERE UsuarioNome = ?", (usuario_nome,))
             result = cursor.fetchone()
             novo_usuario_id = result[0] if result else None
-            
-            if not novo_usuario_id:
-                # Tentar método alternativo
-                cursor.execute("SELECT UsuarioID FROM Usuarios WHERE UsuarioNome = ?", (usuario_nome,))
-                result = cursor.fetchone()
-                novo_usuario_id = result[0] if result else None
-
-            print(f"DEBUG: Novo usuário ID: {novo_usuario_id}")
 
             if not novo_usuario_id:
                 conn.rollback()
                 return jsonify({"status": "error", "message": "Falha ao obter ID do novo usuário"}), 500
 
-            # Adicionar projetos associados
             for projeto_id in projetos_selecionados:
                 projeto_id_int = int(projeto_id)
                 cursor.execute(
                     "INSERT INTO UsuarioProjeto (UsuarioID, ProjetoID) VALUES (?, ?)",
                     (novo_usuario_id, projeto_id_int),
                 )
-                print(f"DEBUG: Projeto {projeto_id_int} associado ao novo usuário {novo_usuario_id}")
 
         conn.commit()
-        print(f"DEBUG: Commit realizado com sucesso")
-        logger.info(f"Usuário {'atualizado' if usuario_id else 'criado'} com sucesso: {usuario_nome}")
+        logger.info(f"Usuário {'atualizado' if usuario_id else 'criado'} com sucesso: id={usuario_id or 'novo'}")
         return jsonify({"status": "success", "message": "Usuário salvo com sucesso!"}), 200
 
     except Exception as e:
         logger.error(f"Erro ao salvar usuário: {e}")
-        print(f"DEBUG: Erro durante salvar_usuario: {e}")
         if conn:
             conn.rollback()
-            print(f"DEBUG: Rollback realizado")
         return jsonify({"status": "error", "message": f"Erro ao salvar usuário: {str(e)}"}), 500
     finally:
         if cursor:
@@ -233,7 +256,10 @@ def salvar_usuario():
 
 @usuarios_bp.route("/obter_projetos_usuario/<int:usuario_id>")
 def obter_projetos_usuario(usuario_id):
-    """Obtém os projetos associados a um usuário"""
+    """Obtém os projetos associados a um usuário (somente admin)."""
+    if "usuario" not in session or not session["usuario"].get("adm"):
+        return jsonify({"error": "Não autorizado"}), 403
+
     conn = None
     cursor = None
     try:
@@ -242,20 +268,20 @@ def obter_projetos_usuario(usuario_id):
             return jsonify([])
 
         cursor = conn.cursor()
-        
+
         cursor.execute(
             """
-            SELECT ProjetoID 
-            FROM UsuarioProjeto 
+            SELECT ProjetoID
+            FROM UsuarioProjeto
             WHERE UsuarioID = ?
             """,
             (usuario_id,)
         )
-        
+
         projetos = [row.ProjetoID for row in cursor.fetchall()]
-        
+
         return jsonify(projetos)
-        
+
     except Exception as e:
         logger.error(f"Erro ao obter projetos do usuário: {e}")
         return jsonify([])

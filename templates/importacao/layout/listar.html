@@ -72,7 +72,7 @@
 
     <div class="layouts-grid" id="layouts-grid">
         {% for layout in layouts %}
-        <article class="layout-card" data-search="{{ layout.NomeLayout|lower }} {{ (layout.Descricao or '')|lower }}">
+        <article class="layout-card" data-search="{{ layout.NomeLayout|lower }} {{ (layout.Descricao or '')|lower }} {{ (layout.TipoEscopoLabel or '')|lower }}">
             <div class="layout-card-header">
                 <div class="layout-card-icon">
                     <i class="fas fa-file-alt"></i>
@@ -90,6 +90,18 @@
                 {% endif %}
             </div>
             <div class="layout-card-meta">
+                {% if layout.TipoEscopoLabel %}
+                <span class="layout-badge escopo">
+                    <i class="fas fa-sitemap"></i>
+                    {{ layout.TipoEscopoLabel }}
+                </span>
+                {% if layout.ObrigatorioNoEscopo %}
+                <span class="layout-badge obrigatorio">
+                    <i class="fas fa-exclamation"></i>
+                    Obrigatório
+                </span>
+                {% endif %}
+                {% endif %}
                 <span class="layout-badge columns">
                     <i class="fas fa-columns"></i>
                     {{ layout.TotalColunas or 0 }} coluna(s)
@@ -116,6 +128,9 @@
             <div class="layout-card-actions">
                 <a href="{{ url_for('layout.editar_layout', layout_id=layout.LayoutID) }}" class="layout-btn-edit">
                     <i class="fas fa-edit"></i> Editar
+                </a>
+                <a href="{{ url_for('layout.versoes_layout', layout_id=layout.LayoutID) }}" class="layout-btn-edit" style="background:#eef2ff;color:#4f46e5;">
+                    <i class="fas fa-history"></i> Histórico
                 </a>
                 <button type="button" class="layout-btn-delete"
                     data-id="{{ layout.LayoutID }}"

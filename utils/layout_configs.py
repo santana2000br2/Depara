@@ -62,8 +62,16 @@ LAYOUT_COLUMNS_JSON = """
         "CODIGO_PRODUTO", "PRODUTO_REFERENCIA", "CNPJ_EMPRESA", "ESTOQUE_CODIGO", "QUANTIDADE",
         "PRECO_MEDIO", "ESTOQUE_IDEAL", "ESTOQUE_CRITICO", "ESTOQUE_MAXIMO", "LOCALIZACAO"
     ],
+    "ProdLocacao": [
+        "PRODUTO_REFERENCIA", "CNPJ_EMPRESA", "LOC_PRIMARIA", "LOC_SECUNDARIA"
+    ],
+    "MovimentoEstoque": [
+        "CPF_CNPJ", "CNPJ_EMPRESA", "DATA_MOVIMENTO", "MOVIMENTO_CODIGO", "MOVIMENTO_DESCRICAO",
+        "DEPARTAMENTO_CODIGO", "DEPARTAMENTO_DESCRICAO", "ESTOQUE_CODIGO", "PRODUTO_REFERENCIA",
+        "QUANTIDADE", "VALOR_UNITARIO", "VALOR_TOTAL"
+    ],
     "Financeiro": [
-        "CPF_CNPJ", "TIPO_MOVFINANCEIRO", "CNPJ_EMPRESA", "TITULO_NUMERO/TITULO_SERIE",
+        "CPF_CNPJ", "TIPO_MOVFINANCEIRO", "CNPJ_EMPRESA", "TITULO_NUMERO", "TITULO_SERIE",
         "TITULO_PARCELA", "DATA_EMISSAO", "DATA_ENTRADA", "DATA_VENCIMENTO", "TITULO_VALOR",
         "TITULO_SALDO", "AGENTECOBRADOR_CODIGO", "AGENTECOBRADOR_DESCRICAO",
         "CONTAGERENCIAL_CODIGO", "CONTAGERENCIAL_DESCRICAO", "TIPOTITULO_CODIGO",
@@ -77,7 +85,16 @@ LAYOUT_COLUMNS_JSON = """
     ],
     "Fseg_Cab": [
         "CODIGO_VEICULO", "CPF_CNPJ", "CHASSI", "NUMERO_OS", "DATA_ABERTURA", "KM", "TIPO_OS_CODIGO", "TIPO_OS_DESCRICAO",
-        "OBSERVACAO_OS", "CNPJ_EMPRESA", "DATA_LIBERAÇÃO", "USUARIO_CONSULTOR"
+        "OBSERVACAO_OS", "CNPJ_EMPRESA", "DATA_LIBERACAO", "USUARIO_CONSULTOR"
+    ],
+    "Fseg_Prd": [
+        "CODIGO_VEICULO", "CHASSI", "NUMERO_OS", "TIPO_OS_CODIGO", "TIPO_OS_DESCRICAO",
+        "PRODUTO_REFERENCIA", "PRODUTO_QUANTIDADE", "VALOR_UNITARIO", "VALOR_DESCONTO", "VALOR_TOTAL", "CNPJ_EMPRESA"
+    ],
+    "Fseg_Srv": [
+        "CODIGO_VEICULO", "CHASSI", "NUMERO_OS", "TIPO_OS_CODIGO", "TIPO_OS_DESCRICAO",
+        "TMO_REFERENCIA", "TMO_DESCRICAO", "TMO_QUANTIDADE", "VALOR_UNITARIO", "VALOR_DESCONTO",
+        "VALOR_TOTAL", "TMO_COBRADO", "CNPJ_EMPRESA"
     ]
 }
 """
@@ -272,11 +289,32 @@ LAYOUTS_RULES_JSON = """
         "ESTOQUE_MAXIMO": {"Obrigatorio": false, "Tipo": "Numerico"},
         "LOCALIZACAO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50}
     },
+    "ProdLocacao": {
+        "PRODUTO_REFERENCIA": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "CNPJ_EMPRESA": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
+        "LOC_PRIMARIA": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 50},
+        "LOC_SECUNDARIA": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 50}
+    },
+    "MovimentoEstoque": {
+        "CPF_CNPJ": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
+        "CNPJ_EMPRESA": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
+        "DATA_MOVIMENTO": {"Obrigatorio": true, "Tipo": "Data"},
+        "MOVIMENTO_CODIGO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 20},
+        "MOVIMENTO_DESCRICAO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 100},
+        "DEPARTAMENTO_CODIGO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 20},
+        "DEPARTAMENTO_DESCRICAO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 100},
+        "ESTOQUE_CODIGO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 20},
+        "PRODUTO_REFERENCIA": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "QUANTIDADE": {"Obrigatorio": true, "Tipo": "Numerico"},
+        "VALOR_UNITARIO": {"Obrigatorio": true, "Tipo": "Numerico"},
+        "VALOR_TOTAL": {"Obrigatorio": true, "Tipo": "Numerico"}
+    },
     "Financeiro": {
         "CPF_CNPJ": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
         "TIPO_MOVFINANCEIRO": {"Obrigatorio": true, "Tipo": "Texto", "ValoresPermitidos": ["R", "P"]},
         "CNPJ_EMPRESA": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
-        "TITULO_NUMERO/TITULO_SERIE": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 100},
+        "TITULO_NUMERO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "TITULO_SERIE": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 20},
         "TITULO_PARCELA": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 10},
         "DATA_EMISSAO": {"Obrigatorio": true, "Tipo": "Data"},
         "DATA_ENTRADA": {"Obrigatorio": true, "Tipo": "Data"},
@@ -323,8 +361,36 @@ LAYOUTS_RULES_JSON = """
         "TIPO_OS_DESCRICAO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 100},
         "OBSERVACAO_OS" : {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 255},
         "CNPJ_EMPRESA" : {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
-        "DATA_LIBERAÇÃO" : {"Obrigatorio": true, "Tipo": "Data"},
+        "DATA_LIBERACAO" : {"Obrigatorio": true, "Tipo": "Data"},
         "USUARIO_CONSULTOR": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 255}
+    },
+    "Fseg_Prd": {
+        "CODIGO_VEICULO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 50},
+        "CHASSI": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 17},
+        "NUMERO_OS": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "TIPO_OS_CODIGO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 3},
+        "TIPO_OS_DESCRICAO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 100},
+        "PRODUTO_REFERENCIA": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "PRODUTO_QUANTIDADE": {"Obrigatorio": true, "Tipo": "Numerico"},
+        "VALOR_UNITARIO": {"Obrigatorio": false, "Tipo": "Numerico"},
+        "VALOR_DESCONTO": {"Obrigatorio": false, "Tipo": "Numerico"},
+        "VALOR_TOTAL": {"Obrigatorio": false, "Tipo": "Numerico"},
+        "CNPJ_EMPRESA": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"}
+    },
+    "Fseg_Srv": {
+        "CODIGO_VEICULO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 50},
+        "CHASSI": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 17},
+        "NUMERO_OS": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "TIPO_OS_CODIGO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 3},
+        "TIPO_OS_DESCRICAO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 100},
+        "TMO_REFERENCIA": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
+        "TMO_DESCRICAO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 255},
+        "TMO_QUANTIDADE": {"Obrigatorio": true, "Tipo": "Numerico"},
+        "VALOR_UNITARIO": {"Obrigatorio": false, "Tipo": "Numerico"},
+        "VALOR_DESCONTO": {"Obrigatorio": false, "Tipo": "Numerico"},
+        "VALOR_TOTAL": {"Obrigatorio": false, "Tipo": "Numerico"},
+        "TMO_COBRADO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 5},
+        "CNPJ_EMPRESA": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"}
     }
 }
 """

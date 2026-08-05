@@ -3,6 +3,8 @@
 -- Staging : Arquivo_Forn_cli_Contato_Tratado
 -- Destino : PessoaContato_MG
 -- Procedure: up_06_Extrai_PessoaContato_gx (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

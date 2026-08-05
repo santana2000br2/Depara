@@ -3,6 +3,8 @@
 -- Staging : (n/a)
 -- Destino : (n/a)
 -- Procedure: up_Replace_Name_DadosGx_Procedures (@BancoDadosGX)
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_SeuProjeto];  -- ALTERE

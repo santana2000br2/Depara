@@ -41,12 +41,13 @@ FORN_CLI_COLUNAS_CHAVE = frozenset({
 
 
 def _normalizar_nome_layout(texto):
-    """Ex.: '1 Forn_cli.txt' → 'forn_cli'"""
+    """Ex.: '1 Forn_cli.txt' → 'forn_cli'; '2 Forn_cli Endereco' → 'forn_cli_endereco'."""
     if not texto:
         return ''
     nome = str(texto).strip().lower()
     nome = re.sub(r'^\d+\s*', '', nome)
     nome = re.sub(r'\.txt$', '', nome)
+    nome = re.sub(r'\s+', '_', nome)
     return nome.strip()
 
 
@@ -619,6 +620,114 @@ def obter_resumo_importacao(cursor, banco_gx, tabela_destino=None):
     return resumo
 
 
+_COLUNAS_CHAVE_FLAG0 = (
+    'CPF_CNPJ', 'NOME', 'CODIGO_PESSOA', 'PRODUTO_REFERENCIA', 'PRODUTO_DESCRICAO',
+    'CHASSI', 'NUMERO_OS', 'CNPJ_EMPRESA', 'EMPRESA_CODIGO', 'TMO_REFERENCIA',
+    'TITULO_NUMERO', 'TITULO_TIPO', 'IDTABELA', 'IDtabela',
+)
+
+
+def _colunas_chave_existentes(cursor, tabela_destino):
+    encontradas = []
+    vistos = set()
+    for cand in _COLUNAS_CHAVE_FLAG0:
+        col = _resolver_coluna(cursor, tabela_destino, cand)
+        if col and col.upper() not in vistos:
+            encontradas.append(col)
+            vistos.add(col.upper())
+        if len(encontradas) >= 5:
+            break
+    return encontradas
+
+
+def obter_motivos_flag0(cursor, banco_gx, tabela_destino):
+    """Agrupa registros Flag=0 pela mensagem de Ocorrencia."""
+    gx = _quote_db(banco_gx)
+    dest = _quote_table(tabela_destino)
+    if not _tabela_existe(cursor, tabela_destino):
+        return []
+
+    col_flag = _resolver_coluna(cursor, tabela_destino, 'Flag', 'FLAG')
+    col_ocorrencia = _resolver_coluna(cursor, tabela_destino, 'Ocorrencia', 'OCORRENCIA')
+    if not col_flag:
+        return []
+
+    fq = _quote_col(col_flag)
+    if col_ocorrencia:
+        oq = _quote_col(col_ocorrencia)
+        _executar(cursor, f"""
+            SELECT
+                CASE
+                    WHEN {oq} IS NULL OR LTRIM(RTRIM({oq})) = ''
+                    THEN N'(sem ocorrência registrada)'
+                    ELSE LTRIM(RTRIM({oq}))
+                END AS Motivo,
+                COUNT(*) AS Qtd
+            FROM {gx}.dbo.{dest}
+            WHERE {fq} = 0
+            GROUP BY
+                CASE
+                    WHEN {oq} IS NULL OR LTRIM(RTRIM({oq})) = ''
+                    THEN N'(sem ocorrência registrada)'
+                    ELSE LTRIM(RTRIM({oq}))
+                END
+            ORDER BY COUNT(*) DESC
+        """)
+    else:
+        _executar(cursor, f"""
+            SELECT N'(coluna Ocorrencia não existe na tabela)' AS Motivo, COUNT(*) AS Qtd
+            FROM {gx}.dbo.{dest}
+            WHERE {fq} = 0
+        """)
+
+    return [
+        {'motivo': (row[0] or '').strip(), 'quantidade': int(row[1] or 0)}
+        for row in cursor.fetchall()
+    ]
+
+
+def obter_detalhe_flag0(cursor, banco_gx, tabela_destino, limite=None):
+    """Lista registros Flag=0 com colunas-chave + Ocorrencia."""
+    gx = _quote_db(banco_gx)
+    dest = _quote_table(tabela_destino)
+    if not _tabela_existe(cursor, tabela_destino):
+        return [], []
+
+    col_flag = _resolver_coluna(cursor, tabela_destino, 'Flag', 'FLAG')
+    if not col_flag:
+        return [], []
+
+    col_ocorrencia = _resolver_coluna(cursor, tabela_destino, 'Ocorrencia', 'OCORRENCIA')
+    chaves = _colunas_chave_existentes(cursor, tabela_destino)
+
+    cols_select = [_quote_col(c) for c in chaves]
+    nomes = list(chaves)
+    if col_ocorrencia:
+        cols_select.append(_quote_col(col_ocorrencia))
+        nomes.append(col_ocorrencia)
+    else:
+        cols_select.append("N'' AS [Ocorrencia]")
+        nomes.append('Ocorrencia')
+
+    top = f"TOP ({int(limite)}) " if limite else ""
+    fq = _quote_col(col_flag)
+    _executar(cursor, f"""
+        SELECT {top}{', '.join(cols_select)}
+        FROM {gx}.dbo.{dest}
+        WHERE {fq} = 0
+        ORDER BY 1
+    """)
+
+    rows = []
+    for row in cursor.fetchall():
+        item = {}
+        for i, nome in enumerate(nomes):
+            val = row[i]
+            item[nome] = '' if val is None else str(val).strip()
+        rows.append(item)
+    return nomes, rows
+
+
 def importar_forn_cli_para_base(df, banco_gx, banco_wf):
     """
     Importa DataFrame validado para DadosGX via up_01_Extrai_Pessoa_gx.
@@ -662,8 +771,8 @@ def importar_forn_cli_para_base(df, banco_gx, banco_wf):
         msg = (
             f"Importação concluída em {banco_gx}.dbo.{tabela_destino} "
             f"(procedure {cfg['procedure']}): "
-            f"{resumo['total']} registro(s), {resumo['flag_1']} apto(s) (Flag=1), "
-            f"{resumo['flag_0']} com ocorrência(s) (Flag=0)."
+            f"{resumo['total']} registro(s), {resumo['flag_1']} importado(s) OK, "
+            f"{resumo['flag_0']} rejeitado(s)."
         )
         return True, msg, resumo
     except Exception as e:

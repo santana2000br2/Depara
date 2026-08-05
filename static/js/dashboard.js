@@ -1,19 +1,19 @@
-// dashboard.js - VersÃ£o Corrigida com data na sidebar
+// dashboard.js - Versão corrigida com data na sidebar
 
 // Mapeamento de tabelas para rotas
 const tableRoutes = {
-    'CondiÃ§Ã£o de Pagamento': '/condicao_pagamento',
+    'Condição de Pagamento': '/condicao_pagamento',
     'Escolaridade': '/escolaridade',
     'Estado': '/estado',
     'Estado Civil': '/estadocivil',
-    'MunicÃ­pio': '/municipio',
-    'PaÃ­s': '/pais',
-    'ProfissÃ£o': '/profissao',
+    'Município': '/municipio',
+    'País': '/pais',
+    'Profissão': '/profissao',
     'Segmento Mercado': '/segmentomercado',
     'Tipo Logradouro': '/tipologradouro',
     'Departamento': '/departamento',
     'Estoque': '/estoque',
-    'Natureza OperaÃ§Ã£o': '/naturezaoperacao',
+    'Natureza Operação': '/naturezaoperacao',
     'Equipe': '/equipe',
     'Usuario DePara': '/usuario_depara',
     'Clas Montadora': '/clasmontadora',
@@ -51,7 +51,7 @@ const tableRoutes = {
     'Tipo Sub Conta': '/tiposubconta'
 };
 
-// FunÃ§Ã£o para criar barra de progresso COM TEXTO PRETO
+// Função para criar barra de progresso COM TEXTO PRETO
 function createProgressBar(percentual, qtd) {
     if (percentual === undefined || percentual === null) {
         percentual = 0;
@@ -82,14 +82,14 @@ function createProgressBar(percentual, qtd) {
     `;
 }
 
-// FunÃ§Ã£o para criar links nas tabelas
+// Função para criar links nas tabelas
 function createTableLinks() {
     if (!document.querySelector('.status-table')) {
         return;
     }
 
     console.log("=== CRIANDO LINKS NAS TABELAS ===");
-    let banco_usuario = 'DB_PADRAO'; // valor padrÃ£o
+    let banco_usuario = 'DB_PADRAO'; // valor padrão
 
     if (window.empresa_selecionada && window.empresa_selecionada.DadosGX) {
         banco_usuario = window.empresa_selecionada.DadosGX;
@@ -114,7 +114,7 @@ function createTableLinks() {
     });
 }
 
-// FunÃ§Ã£o genÃ©rica para preencher tabelas
+// Função genérica para preencher tabelas
 function fillTable(tbodyId, dataArray, categoryName) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) {
@@ -124,20 +124,20 @@ function fillTable(tbodyId, dataArray, categoryName) {
     tbody.innerHTML = '';
 
     if (!dataArray || dataArray.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">Nenhum dado disponÃ­vel</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">Nenhum dado disponível</td></tr>';
         return;
     }
 
     dataArray.forEach(item => {
         const row = document.createElement('tr');
 
-        // CÃ©lula do nome da tabela
+        // Célula do nome da tabela
         const nameCell = document.createElement('td');
         nameCell.textContent = item.tabela || 'N/A';
         nameCell.style.fontWeight = '500';
         nameCell.style.padding = '12px 8px';
 
-        // CÃ©lula de status
+        // Célula de status
         const statusCell = document.createElement('td');
         const percentual = item.percentualConclusao || 0;
         const qtd = item.qtd || 0;
@@ -145,12 +145,12 @@ function fillTable(tbodyId, dataArray, categoryName) {
         let statusText = 'Pendente';
         let statusClass = 'status-pendente';
 
-        // Se QTD for 0, mostra "NÃ£o se aplica" com cor neutra
+        // Se QTD for 0, mostra "Não se aplica" com cor neutra
         if (qtd === 0) {
-            statusText = 'NÃ£o se aplica';
+            statusText = 'Não se aplica';
             statusClass = 'status-inaplicavel';
         } else if (percentual === 100) {
-            statusText = 'ConcluÃ­do';
+            statusText = 'Concluído';
             statusClass = 'status-concluido';
         } else if (percentual >= 70) {
             statusText = 'Em Andamento';
@@ -165,19 +165,19 @@ function fillTable(tbodyId, dataArray, categoryName) {
         statusCell.style.padding = '12px 8px';
         statusCell.style.fontWeight = '600';
 
-        // CÃ©lula de quantidade total
+        // Célula de quantidade total
         const qtdCell = document.createElement('td');
         qtdCell.textContent = qtd;
         qtdCell.style.textAlign = 'center';
         qtdCell.style.padding = '12px 8px';
 
-        // CÃ©lula de quantidade pendente
+        // Célula de quantidade pendente
         const qtdPendenteCell = document.createElement('td');
         qtdPendenteCell.textContent = item.qtdPendente || 0;
         qtdPendenteCell.style.textAlign = 'center';
         qtdPendenteCell.style.padding = '12px 8px';
 
-        // CÃ©lula de percentual com barra de progresso
+        // Célula de percentual com barra de progresso
         const percentualCell = document.createElement('td');
         percentualCell.innerHTML = createProgressBar(percentual, qtd);
         percentualCell.style.padding = '12px 8px';
@@ -198,13 +198,13 @@ function fillTable(tbodyId, dataArray, categoryName) {
 function fillPessoaTable() {
     console.log("Preenchendo tabela PESSOA...");
     const data = [
-        { tabela: 'CondiÃ§Ã£o de Pagamento', ...(window.cond_pag || {}) },
+        { tabela: 'Condição de Pagamento', ...(window.cond_pag || {}) },
         { tabela: 'Escolaridade', ...(window.escol || {}) },
         { tabela: 'Estado', ...(window.estado || {}) },
         { tabela: 'Estado Civil', ...(window.estadocivil || {}) },
-        { tabela: 'MunicÃ­pio', ...(window.municipio || {}) },
-        { tabela: 'PaÃ­s', ...(window.pais || {}) },
-        { tabela: 'ProfissÃ£o', ...(window.profissao || {}) },
+        { tabela: 'Município', ...(window.municipio || {}) },
+        { tabela: 'País', ...(window.pais || {}) },
+        { tabela: 'Profissão', ...(window.profissao || {}) },
         { tabela: 'Segmento Mercado', ...(window.segmentomercado || {}) },
         { tabela: 'Tipo Logradouro', ...(window.tipologradouro || {}) }
     ];
@@ -217,19 +217,19 @@ function fillGeralTable() {
     const data = [
         { tabela: 'Departamento', ...(window.departamento || {}) },
         { tabela: 'Estoque', ...(window.estoque || {}) },
-        { tabela: 'Natureza OperaÃ§Ã£o', ...(window.naturezaoperacao || {}) },
+        { tabela: 'Natureza Operação', ...(window.naturezaoperacao || {}) },
         { tabela: 'Equipe', ...(window.equipe || {}) }
     ];
     fillTable('tbody-geral', data, 'GERAL');
 }
 
-// Preencher tabela USUÃRIOS
+// Preencher tabela USUÁRIOS
 function fillUsuariosTable() {
-    console.log("Preenchendo tabela USUÃRIOS...");
+    console.log("Preenchendo tabela USUÁRIOS...");
     const data = [
         { tabela: 'Usuario DePara', ...(window.usuario_depara || {}) }
     ];
-    fillTable('tbody-usuarios', data, 'USUÃRIOS');
+    fillTable('tbody-usuarios', data, 'USUÁRIOS');
 }
 
 // Preencher tabela PRODUTO
@@ -248,9 +248,9 @@ function fillProdutoTable() {
     fillTable('tbody-produto', data, 'PRODUTO');
 }
 
-// Preencher tabela VEÃCULOS
+// Preencher tabela VEÍCULOS
 function fillVeiculosTable() {
-    console.log("Preenchendo tabela VEÃCULOS...");
+    console.log("Preenchendo tabela VEÍCULOS...");
     const data = [
         { tabela: 'Combustivel', ...(window.combustivel || {}) },
         { tabela: 'Cor Externa', ...(window.corexterna || {}) },
@@ -264,7 +264,7 @@ function fillVeiculosTable() {
         { tabela: 'TMO', ...(window.tmo || {}) },
         { tabela: 'Veiculo Ano', ...(window.veiculoano || {}) }
     ];
-    fillTable('tbody-veiculos', data, 'VEÃCULOS');
+    fillTable('tbody-veiculos', data, 'VEÍCULOS');
 }
 
 // Preencher tabela FINANCEIRO
@@ -297,7 +297,7 @@ function fillContabilidadeTable() {
     fillTable('tbody-contabilidade', data, 'CONTABILIDADE');
 }
 
-// FunÃ§Ã£o para atualizar datas - AGORA APENAS NA SIDEBAR
+// Função para atualizar datas - AGORA APENAS NA SIDEBAR
 function updateDates() {
     const now = new Date();
     const dateStr = now.toLocaleString('pt-BR');
@@ -309,18 +309,18 @@ function updateDates() {
     }
 }
 
-// FunÃ§Ã£o para verificar se um quadro deve ser mostrado
+// Função para verificar se um quadro deve ser mostrado
 function shouldShowCategory(categoryName) {
     if (!window.escopos_habilitados || window.escopos_habilitados.length === 0) {
-        return true; // Mostrar tudo se nÃ£o houver escopos definidos
+        return true; // Mostrar tudo se não houver escopos definidos
     }
 
     const categoryToScope = {
         'Pessoa': 'PESSOA',
         'Geral': 'GERAL',
-        'UsuÃ¡rios': 'GERAL',
+        'Usuários': 'GERAL',
         'Produto': 'PRODUTOS',
-        'VeÃ­culos': 'VEICULOS',
+        'Veículos': 'VEICULOS',
         'Financeiro': 'FINANCEIRO',
         'Contabilidade': 'CONTABILIDADE'
     };
@@ -329,7 +329,7 @@ function shouldShowCategory(categoryName) {
     return scope ? window.escopos_habilitados.includes(scope) : false;
 }
 
-// FunÃ§Ã£o para scroll suave atÃ© o topo
+// Função para scroll suave até o topo
 function scrollToTop() {
     window.scrollTo({
         top: 0,
@@ -341,7 +341,7 @@ function isDashboardPage() {
     return document.getElementById('tbody-pessoa') !== null;
 }
 
-// FunÃ§Ã£o principal para inicializar o dashboard
+// Função principal para inicializar o dashboard
 function initializeDashboard() {
     if (!isDashboardPage()) {
         return;
@@ -350,9 +350,9 @@ function initializeDashboard() {
     console.log("=== INICIALIZANDO DASHBOARD ===");
     console.log("Escopos habilitados:", window.escopos_habilitados);
 
-    // Verificar se os dados bÃ¡sicos estÃ£o disponÃ­veis
+    // Verificar se os dados básicos estão disponíveis
     if (!window.cond_pag) {
-        console.warn("Dados nÃ£o carregados completamente. Aguardando...");
+        console.warn("Dados não carregados completamente. Aguardando...");
         setTimeout(initializeDashboard, 100);
         return;
     }
@@ -366,13 +366,13 @@ function initializeDashboard() {
     if (shouldShowCategory('Geral')) {
         fillGeralTable();
     }
-    if (shouldShowCategory('UsuÃ¡rios')) {
+    if (shouldShowCategory('Usuários')) {
         fillUsuariosTable();
     }
     if (shouldShowCategory('Produto')) {
         fillProdutoTable();
     }
-    if (shouldShowCategory('VeÃ­culos')) {
+    if (shouldShowCategory('Veículos')) {
         fillVeiculosTable();
     }
     if (shouldShowCategory('Financeiro')) {
@@ -385,7 +385,7 @@ function initializeDashboard() {
     // Atualizar datas (apenas na sidebar)
     updateDates();
 
-    // Criar links apÃ³s preencher as tabelas
+    // Criar links após preencher as tabelas
     setTimeout(createTableLinks, 300);
 
     console.log("Dashboard inicializado com sucesso!");
@@ -419,7 +419,7 @@ function initializeSidebar() {
     }
 }
 
-// InicializaÃ§Ã£o quando o DOM estiver pronto
+// Inicialização quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', function () {
     initializeSidebar();
 
@@ -451,7 +451,7 @@ function initializeImportMenu() {
     });
 
     const currentPath = window.location.pathname;
-    if (currentPath.includes('/importacao/') || currentPath.includes('/layout/') || currentPath.includes('/envio_arquivo')) {
+    if (currentPath.includes('/importacao/') || currentPath.includes('/layout/') || currentPath.includes('/validador-estrutura/') || currentPath.includes('/envio_arquivo')) {
         const importMenu = document.querySelector('.menu-with-submenu');
         if (importMenu) {
             importMenu.classList.add('active');
@@ -459,7 +459,7 @@ function initializeImportMenu() {
     }
 }
 
-// Debug detalhado â€” apenas no dashboard
+// Debug detalhado - apenas no dashboard
 window.addEventListener('load', function () {
     if (!isDashboardPage()) {
         return;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gerenciar Usuários - DE x PARA</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,6 +407,7 @@
                 <tr>
                     <th>ID</th>
                     <th>Usuário</th>
+                    <th>E-mail</th>
                     <th>Projetos Associados</th>
                     <th>Status</th>
                     <th>Administrador</th>
@@ -418,6 +419,7 @@
                 <tr>
                     <td>{{ usuario.UsuarioID }}</td>
                     <td>{{ usuario.UsuarioNome }}</td>
+                    <td>{{ usuario.Email or '—' }}</td>
                     <td>
                         <div class="projetos-tags">
                             {% for projeto in usuario.projetos_associados %}
@@ -433,6 +435,9 @@
                         {% else %}
                         <span class="badge badge-danger">Inativo</span>
                         {% endif %}
+                        {% if usuario.ContaBloqueada %}
+                        <span class="badge badge-danger" title="Bloqueado após 5 tentativas de senha">Senha bloqueada</span>
+                        {% endif %}
                     </td>
                     <td>
                         {% if usuario.Adm %}
@@ -445,8 +450,10 @@
                         <button class="btn btn-edit" 
                                 data-usuario_id="{{ usuario.UsuarioID }}"
                                 data-usuario_nome="{{ usuario.UsuarioNome }}"
+                                data-email="{{ usuario.Email or '' }}"
                                 data-ativo="{{ usuario.Ativo }}"
                                 data-adm="{{ usuario.Adm }}"
+                                data-conta_bloqueada="{{ 1 if usuario.ContaBloqueada else 0 }}"
                                 onclick="editarUsuario(this)">
                             <i class="fas fa-edit"></i> Editar
                         </button>
@@ -468,17 +475,22 @@
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2 id="modalTitle">Adicionar Usuário</h2>
-            <form id="usuarioForm">
+            <form id="usuarioForm" autocomplete="off">
                 <input type="hidden" id="usuario_id" name="usuario_id" value="">
                 
                 <div class="form-group">
                     <label for="usuario_nome">Nome do Usuário:</label>
-                    <input type="text" id="usuario_nome" name="usuario_nome" required>
+                    <input type="text" id="usuario_nome" name="usuario_nome" required autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="email">E-mail:</label>
+                    <input type="email" id="email" name="email" placeholder="para recuperação de senha" autocomplete="off">
                 </div>
                 
                 <div class="form-group">
                     <label for="senha">Senha:</label>
-                    <input type="password" id="senha" name="senha" required>
+                    <input type="password" id="senha" name="senha" required autocomplete="new-password">
                     <p class="password-note" id="passwordNote" style="display: none;">Deixe em branco se não quiser alterar a senha</p>
                 </div>
 
@@ -497,6 +509,11 @@
                 <div class="form-check">
                     <input type="checkbox" id="adm" name="adm" value="1">
                     <label for="adm">Administrador</label>
+                </div>
+
+                <div class="form-check" id="desbloquearWrap" style="display: none;">
+                    <input type="checkbox" id="desbloquear_senha" name="desbloquear_senha" value="1">
+                    <label for="desbloquear_senha">Desbloquear senha (liberar login)</label>
                 </div>
                 
                 <button type="submit" class="btn btn-primary">
@@ -568,6 +585,8 @@
             document.getElementById('senha').required = true;
             document.getElementById('ativo').checked = true;
             document.getElementById('adm').checked = false;
+            document.getElementById('desbloquear_senha').checked = false;
+            document.getElementById('desbloquearWrap').style.display = 'none';
             
             // Limpar e popular checkboxes de projetos
             popularCheckboxesProjetos();
@@ -590,16 +609,21 @@
         function editarUsuario(button) {
             const usuario_id = button.getAttribute('data-usuario_id');
             const usuario_nome = button.getAttribute('data-usuario_nome');
+            const email = button.getAttribute('data-email') || '';
             const ativo = button.getAttribute('data-ativo');
             const adm = button.getAttribute('data-adm');
+            const contaBloqueada = button.getAttribute('data-conta_bloqueada') === '1';
             
             modalTitle.textContent = 'Editar Usuário';
             usuarioIdField.value = usuario_id;
             document.getElementById('usuario_nome').value = usuario_nome;
+            document.getElementById('email').value = email;
             
             // Marcar checkboxes
             document.getElementById('ativo').checked = (ativo === 'True' || ativo === '1' || ativo === 1);
             document.getElementById('adm').checked = (adm === 'True' || adm === '1' || adm === 1);
+            document.getElementById('desbloquearWrap').style.display = contaBloqueada ? 'block' : 'none';
+            document.getElementById('desbloquear_senha').checked = false;
             
             passwordNote.style.display = 'block';
             document.getElementById('senha').required = false;
@@ -669,9 +693,11 @@
             
             const formData = {
                 usuario_nome: document.getElementById('usuario_nome').value,
+                email: document.getElementById('email').value,
                 senha: document.getElementById('senha').value,
                 ativo: document.getElementById('ativo').checked ? 1 : 0,
                 adm: document.getElementById('adm').checked ? 1 : 0,
+                desbloquear_senha: document.getElementById('desbloquear_senha').checked ? 1 : 0,
                 projetos: projetosSelecionados
             };
 

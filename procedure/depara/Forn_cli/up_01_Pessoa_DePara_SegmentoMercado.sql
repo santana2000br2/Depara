@@ -3,6 +3,8 @@
 -- Destino : SegmentoMercado_DePara
 -- Procedure: up_01_Pessoa_DePara_SegmentoMercado
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

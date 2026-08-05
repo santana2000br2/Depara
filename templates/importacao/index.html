@@ -1,8 +1,23 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container">
-    <h1>Importação de Arquivos - Sistema Novo</h1>
+{% set bp = blueprint_nome|default('importacao') %}
+<div class="container page-envio-arquivo {% if modo_validador %}modo-validador{% else %}modo-importacao{% endif %}">
+    <div class="page-envio-header">
+        <span class="page-envio-badge">
+            <i class="fas fa-{% if modo_validador %}clipboard-check{% else %}database{% endif %}"></i>
+            {% if modo_validador %}Somente validação{% else %}Importação para o banco{% endif %}
+        </span>
+        <h1>{% if modo_validador %}Validador de Estrutura{% else %}Importação de Arquivos{% endif %}</h1>
+    </div>
+
+    {% if modo_validador and projeto_arquivo_workflow and not importacao_liberada_projeto %}
+    <div class="alert alert-info" style="margin-bottom: 16px;">
+        <i class="fas fa-info-circle"></i>
+        Fase de validação: confira erros e avisos do arquivo. A importação para o banco e o De/Para
+        serão liberados quando o administrador marcar <strong>Importação Liberada</strong> no projeto.
+    </div>
+    {% endif %}
 
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -18,25 +33,80 @@
     {% endwith %}
     
     <div class="upload-container">
+        <!-- Coluna esquerda: últimos envios -->
+        <aside class="ultimos-envios-panel">
+            <div class="ultimos-envios-card">
+                <div class="ultimos-envios-header">
+                    <h4><i class="fas fa-history"></i> Últimos</h4>
+                </div>
+                {% if ultimos_envios %}
+                <ul class="ultimos-envios-lista">
+                    {% for item in ultimos_envios %}
+                    {% set status_txt = (item.TotalErros ~ ' erro(s)') if item.TotalErros else ('Importado' if item.ImportacaoRealizada else 'OK') %}
+                    {% set modo_txt = 'Validação' if item.Modo == 'validacao' else 'Importação' %}
+                    {% set tip = (item.NomeArquivo or '—') ~ ' | Layout: ' ~ (item.NomeLayout or '—') ~ ' | ' ~ (item.DataEnvioFmt or '') ~ ' | ' ~ modo_txt ~ ' | ' ~ status_txt %}
+                    <li>
+                        <button type="button"
+                                class="ultimos-envios-arquivo-btn"
+                                title="{{ tip }}"
+                                aria-label="{{ tip }}">
+                            <i class="fas fa-file-alt"></i>
+                            <span>{{ item.NomeArquivo or '—' }}</span>
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="ultimos-envios-vazio">Nenhum envio.</p>
+                {% endif %}
+                <a href="{{ url_for('historico_envio.index') }}"
+                   class="ultimos-envios-btn"
+                   title="Abrir histórico completo de envios">
+                    <i class="fas fa-list"></i> Histórico
+                </a>
+            </div>
+        </aside>
+
         <!-- Card principal do Enviar Arquivo -->
         <div class="card-main">
             <div class="card-icon">
                 <i class="fas fa-file-upload"></i>
             </div>
-            <h3>Enviar Arquivo</h3>
-            <p>Faça upload de arquivos para importação com validação por layout</p>
+            <h3>{% if modo_validador %}Validar Estrutura do Arquivo{% else %}Enviar Arquivo{% endif %}</h3>
+            <p>{% if modo_validador %}Valide o arquivo contra o layout selecionado (sem gravar no banco).{% else %}Faça upload de arquivos para importação com validação por layout{% endif %}</p>
             
             <!-- Formulário de Upload Integrado -->
             <div class="upload-form">
                 <form method="post" enctype="multipart/form-data" id="upload-form">
                     <div class="form-group">
                         <label for="layout_id">Layout *</label>
-                        <select name="layout_id" id="layout_id" class="form-control" required>
-                            <option value="">Selecione um layout</option>
-                            {% for layout in layouts %}
-                            <option value="{{ layout.LayoutID }}" {% if layout_id_selecionado|string == layout.LayoutID|string %}selected{% endif %}>{{ layout.NomeLayout }} - {{ layout.Descricao or '' }}</option>
-                            {% endfor %}
-                        </select>
+                        <div class="layout-select-row">
+                            <select name="layout_id" id="layout_id" class="form-control" required>
+                                <option value="">Selecione um layout</option>
+                                {% for layout in layouts %}
+                                <option value="{{ layout.LayoutID }}"
+                                        data-telefone="{{ '1' if layout.eh_telefone else '0' }}"
+                                        {% if layout_id_selecionado|string == layout.LayoutID|string %}selected{% endif %}>{{ layout.NomeLayout }} - {{ layout.Descricao or '' }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button"
+                               id="btn-visualizar-layout"
+                               class="btn-visualizar-layout disabled"
+                               data-api-template="{{ url_for('layout.api_visualizar_layout', layout_id=0) }}"
+                               title="Visualizar layout (somente leitura)"
+                               aria-disabled="true"
+                               disabled>
+                                <i class="fas fa-eye"></i>
+                                <span>Visualizar</span>
+                            </button>
+                        </div>
+                        <div id="instrucao-telefone-layout" class="layout-instrucao-telefone" hidden>
+                            <i class="fas fa-phone-alt"></i>
+                            <div>
+                                <strong>Layout Telefone — colunas adicionais</strong>
+                                <p>{{ instrucao_telefone|default('') }}</p>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="form-group">
@@ -47,7 +117,7 @@
                     <div class="result-panel info-panel" data-panel="info-arquivo">
                         <button type="button" class="result-panel-toggle info-toggle" aria-expanded="false">
                             <span class="result-panel-title">
-                                <i class="fas fa-info-circle" style="color: #007bff;"></i>
+                                <i class="fas fa-info-circle" style="color: {% if modo_validador %}#0d9488{% else %}#007bff{% endif %};"></i>
                                 Informações do arquivo
                             </span>
                             <span class="result-panel-summary">CSV, TXT · separador § · Latin-1</span>
@@ -55,11 +125,15 @@
                         </button>
                         <div class="result-panel-content info-content">
                             <div><strong>Formatos suportados:</strong> CSV, TXT</div>
-                            <div><strong>Separador:</strong> § (pipeline)</div>
+                            <div><strong>Separador:</strong> § (pipeline) ou ? (legado)</div>
                             <div><strong>Encoding:</strong> Latin-1</div>
                             <div><strong>Última coluna:</strong> se estiver vazia, pode omitir o § final — será preenchida automaticamente</div>
                             <div><strong>Erros bloqueantes:</strong> falta de Nome (campo 2), CPF/CNPJ (campo 4) ou coluna(s) no arquivo (exceto só a última)</div>
+                            {% if modo_validador %}
+                            <div><strong>Modo:</strong> apenas validação de estrutura — não importa para o banco</div>
+                            {% else %}
                             <div><strong>Importação:</strong> sem erros bloqueantes, valida e importa automaticamente (Pessoa_MG + De/Para)</div>
+                            {% endif %}
                             <div><strong>Datas:</strong> remove letras e textos (NT, N/A, S/N, NULL, etc.); converte formatos válidos; inválidas ficam vazias</div>
                             <div><strong>E-mail inválido:</strong> gera aviso e campo vazio — não impede a importação</div>
                             <div><strong>Gerenciar Layouts:</strong> Disponível no menu lateral para administradores</div>
@@ -67,9 +141,68 @@
                     </div>
                     
                     <button type="submit" class="btn-process" id="process-button" disabled>
-                        <i class="fas fa-cog"></i> Validar e Importar
+                        <i class="fas fa-{% if modo_validador %}search{% else %}cog{% endif %}"></i>
+                        {% if modo_validador %}Validar Estrutura{% else %}Validar e Importar{% endif %}
                     </button>
                 </form>
+            </div>
+        </div>
+
+        <!-- Modal: Visualizar Layout (sempre disponível, fora do bloco de resultados) -->
+        <div class="import-modal-overlay" id="modal-layout-view" hidden>
+            <div class="import-modal import-modal--layout-view" role="dialog" aria-labelledby="modal-layout-view-titulo" aria-modal="true">
+                <div class="import-modal-header">
+                    <h3 id="modal-layout-view-titulo"><i class="fas fa-eye"></i> Visualizar Layout</h3>
+                    <button type="button" class="import-modal-close" id="modal-layout-view-fechar" aria-label="Fechar">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="import-modal-body">
+                    <div class="import-modal-loading" id="modal-layout-view-loading" hidden>
+                        <i class="fas fa-spinner fa-spin"></i> Carregando layout...
+                    </div>
+                    <div class="import-modal-empty" id="modal-layout-view-erro" hidden></div>
+                    <div id="modal-layout-view-conteudo" hidden>
+                        <div class="layout-view-meta">
+                            <div class="layout-view-meta-item">
+                                <span class="layout-view-meta-label">Nome</span>
+                                <strong id="modal-layout-view-nome"></strong>
+                            </div>
+                            <div class="layout-view-meta-item">
+                                <span class="layout-view-meta-label">Descrição</span>
+                                <span id="modal-layout-view-descricao"></span>
+                            </div>
+                            <div class="layout-view-readonly-chip">
+                                <i class="fas fa-lock"></i> Somente leitura
+                            </div>
+                        </div>
+                        <div id="modal-layout-view-instrucao-tel" class="layout-instrucao-telefone" hidden style="margin:0 0 14px;">
+                            <i class="fas fa-phone-alt"></i>
+                            <div>
+                                <strong>Colunas adicionais de telefone</strong>
+                                <p id="modal-layout-view-instrucao-tel-texto"></p>
+                            </div>
+                        </div>
+                        <div class="import-modal-table-wrap">
+                            <table class="compact-table import-modal-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:70px;">Posição</th>
+                                        <th>Descrição</th>
+                                        <th style="width:100px;">Obrigatório</th>
+                                        <th style="width:120px;">Tipo</th>
+                                        <th>Validação / Default</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-layout-view-corpo"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="import-modal-footer">
+                    <span class="import-modal-total" id="modal-layout-view-total"></span>
+                    <button type="button" class="btn-export btn-export-preview" id="modal-layout-view-ok">Fechar</button>
+                </div>
             </div>
         </div>
 
@@ -89,9 +222,20 @@
                     <i class="fas fa-chevron-down result-panel-icon"></i>
                 </button>
                 <div class="result-panel-content">
+                    {% if modo_validador and alerta_dependencia_arquivos %}
+                    <div class="alert alert-warning" style="margin-bottom: 16px; text-align: left;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Dependência de arquivo principal:</strong>
+                        <ul style="margin: 8px 0 0 18px; padding: 0;">
+                            {% for msg in alerta_dependencia_arquivos %}
+                            <li>{{ msg }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
                     <div class="process-info">
                         <div class="process-info-item">
-                            <i class="fas fa-tag" style="color: #007bff;"></i>
+                            <i class="fas fa-tag" style="color: {% if modo_validador %}#0d9488{% else %}#007bff{% endif %};"></i>
                             <strong>Layout:</strong> {{ layout }}
                         </div>
                         <div class="process-info-item">
@@ -104,17 +248,23 @@
                         </div>
                     </div>
                     <div class="export-buttons">
+                        {% if modo_validador %}
+                        <button type="button" class="btn-export btn-export-preview" id="btn-abrir-preview"
+                                data-api-url="{{ url_for(bp ~ '.api_preview', process_id=process_id) }}">
+                            <i class="fas fa-table"></i> Ver TOP 100 do Arquivo
+                        </button>
+                        {% endif %}
                         {% if total_erros > 0 or total_avisos|default(0) > 0 %}
                         <button type="button" class="btn-export btn-export-error" id="btn-abrir-detalhes"
                                 data-process-id="{{ process_id }}"
                                 data-total-erros="{{ total_erros }}"
                                 data-total-avisos="{{ total_avisos|default(0) }}"
-                                data-api-url="{{ url_for('importacao.api_detalhes', process_id=process_id) }}"
-                                data-export-url="{{ url_for('importacao.exportar_erros', process_id=process_id) }}">
+                                data-api-url="{{ url_for(bp ~ '.api_detalhes', process_id=process_id) }}"
+                                data-export-url="{{ url_for(bp ~ '.exportar_erros', process_id=process_id) }}">
                             <i class="fas fa-list-alt"></i> Ver Erros e Avisos
                         </button>
                         {% endif %}
-                        <a href="{{ url_for('importacao.exportar_processado', process_id=process_id) }}" class="btn-export btn-export-success">
+                        <a href="{{ url_for(bp ~ '.exportar_processado', process_id=process_id) }}" class="btn-export btn-export-success">
                             <i class="fas fa-file-excel"></i> Exportar Arquivo Processado
                         </a>
                     </div>
@@ -148,34 +298,35 @@
                         {% if importacao_ultimo_resultado %}
                         <div class="alert alert-{{ 'success' if importacao_ultimo_resultado.sucesso else 'error' }}" style="margin-bottom:16px;text-align:left;">
                             <i class="fas fa-{{ 'check-circle' if importacao_ultimo_resultado.sucesso else 'exclamation-circle' }}"></i>
-                            <strong>{{ 'Importação concluída' if importacao_ultimo_resultado.sucesso else 'Falha na importação' }}:</strong>
-                            {{ importacao_ultimo_resultado.mensagem }}
-                            {% if importacao_ultimo_resultado.sucesso and importacao_ultimo_resultado.resumo.total is defined %}
-                            <div style="margin-top:8px;font-size:0.9rem;">
-                                Total: {{ importacao_ultimo_resultado.resumo.total|default(0) }} ·
-                                Flag=1: {{ importacao_ultimo_resultado.resumo.flag_1|default(0) }} ·
-                                Flag=0: {{ importacao_ultimo_resultado.resumo.flag_0|default(0) }}
-                            </div>
-                            {% endif %}
-                            {% if importacao_ultimo_resultado.sucesso and importacao_ultimo_resultado.resumo.procedure %}
-                            <div style="margin-top:8px;font-size:0.9rem;">
-                                Procedure: {{ importacao_ultimo_resultado.resumo.procedure }}
-                            </div>
-                            {% endif %}
-                            {% if importacao_ultimo_resultado.sucesso and importacao_ultimo_resultado.resumo.depara %}
-                            <div style="margin-top:8px;font-size:0.9rem;">
-                                {% if importacao_ultimo_resultado.resumo.depara.segmento_mercado is defined %}
-                                Segmento: {{ importacao_ultimo_resultado.resumo.depara.segmento_mercado.vinculados_wf|default(0) }} WF ·
-                                Escolaridade: {{ importacao_ultimo_resultado.resumo.depara.escolaridade.vinculados_wf|default(0) }} WF ·
-                                Profissão: {{ importacao_ultimo_resultado.resumo.depara.profissao.vinculados_wf|default(0) }} WF ·
-                                Estado Civil: {{ importacao_ultimo_resultado.resumo.depara.estado_civil.vinculados_wf|default(0) }} WF
-                                {% elif importacao_ultimo_resultado.resumo.depara.municipio is defined %}
-                                Município: {{ importacao_ultimo_resultado.resumo.depara.municipio.vinculados_wf|default(0) }} WF ·
-                                Tipo Logradouro: {{ importacao_ultimo_resultado.resumo.depara.tipo_logradouro.vinculados_wf|default(0) }} WF ·
-                                Estado: {{ importacao_ultimo_resultado.resumo.depara.estado.vinculados_wf|default(0) }} WF ·
-                                País: {{ importacao_ultimo_resultado.resumo.depara.pais.vinculados_wf|default(0) }} WF
+                            {% if importacao_ultimo_resultado.sucesso %}
+                            <strong>Importação concluída:</strong>
+                            {% if importacao_ultimo_resultado.resumo_texto %}
+                            <div class="flag-resumo" style="margin-top:8px;font-size:0.95rem;display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
+                                <span>
+                                    Total: {{ importacao_ultimo_resultado.total|default(0) }} ·
+                                    Importados OK: {{ importacao_ultimo_resultado.flag_1|default(0) }} ·
+                                    Rejeitados: {{ importacao_ultimo_resultado.flag_0|default(0) }}
+                                </span>
+                                {% if (importacao_ultimo_resultado.flag_0|default(0)) > 0 and process_id %}
+                                <button type="button"
+                                        class="btn-flag0-motivos"
+                                        id="btn-abrir-flag0"
+                                        data-api-url="{{ url_for(bp ~ '.api_motivos_flag0', process_id=process_id) }}"
+                                        data-export-url="{{ url_for(bp ~ '.exportar_flag0', process_id=process_id) }}"
+                                        data-flag0="{{ importacao_ultimo_resultado.flag_0 }}">
+                                    <i class="fas fa-search"></i> Ver motivos dos rejeitados
+                                </button>
                                 {% endif %}
                             </div>
+                            {% endif %}
+                            {% if importacao_ultimo_resultado.depara_texto %}
+                            <div style="margin-top:10px;font-size:0.9rem;">
+                                <strong>Gerado o De/Para</strong>
+                            </div>
+                            {% endif %}
+                            {% else %}
+                            <strong>Falha na importação:</strong>
+                            {{ importacao_ultimo_resultado.mensagem }}
                             {% endif %}
                         </div>
                         {% elif total_erros > 0 %}
@@ -236,20 +387,192 @@
                 <div class="import-modal-footer">
                     <span class="import-modal-total" id="modal-detalhes-total"></span>
                     <a href="#" class="btn-export btn-export-success" id="modal-detalhes-exportar">
-                        <i class="fas fa-file-excel"></i> Exportar para Excel
+                        <i class="fas fa-file-excel"></i> Exportar tudo para Excel
                     </a>
                 </div>
             </div>
         </div>
         </div>
+
+        <!-- Modal: Motivos dos rejeitados -->
+        <div class="import-modal-overlay" id="modal-flag0" hidden>
+            <div class="import-modal" role="dialog" aria-labelledby="modal-flag0-titulo" aria-modal="true">
+                <div class="import-modal-header">
+                    <h3 id="modal-flag0-titulo"><i class="fas fa-ban"></i> Motivos dos rejeitados</h3>
+                    <button type="button" class="import-modal-close" id="modal-flag0-fechar" aria-label="Fechar">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="import-modal-body">
+                    <div class="import-modal-loading" id="modal-flag0-loading" hidden>
+                        <i class="fas fa-spinner fa-spin"></i> Carregando...
+                    </div>
+                    <div class="import-modal-empty" id="modal-flag0-vazio" hidden>
+                        Nenhum motivo encontrado.
+                    </div>
+                    <div class="import-modal-table-wrap" id="modal-flag0-tabela-wrap" hidden>
+                        <table class="compact-table import-modal-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:80px;">Qtd</th>
+                                    <th>Motivo (Ocorrência)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modal-flag0-corpo"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="import-modal-footer">
+                    <span class="import-modal-total" id="modal-flag0-total"></span>
+                    <a href="#" class="btn-export btn-export-success" id="modal-flag0-exportar">
+                        <i class="fas fa-file-excel"></i> Exportar detalhe Excel
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        {% if modo_validador %}
+        <!-- Modal: TOP 100 do arquivo -->
+        <div class="import-modal-overlay" id="modal-preview" hidden>
+            <div class="import-modal import-modal--preview" role="dialog" aria-labelledby="modal-preview-titulo" aria-modal="true">
+                <div class="import-modal-header">
+                    <h3 id="modal-preview-titulo"><i class="fas fa-table"></i> TOP 100 do Arquivo</h3>
+                    <button type="button" class="import-modal-close" id="modal-preview-fechar" aria-label="Fechar">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="import-modal-body">
+                    <div class="import-modal-loading" id="modal-preview-loading" hidden>
+                        <i class="fas fa-spinner fa-spin"></i> Carregando...
+                    </div>
+                    <div class="import-modal-empty" id="modal-preview-vazio" hidden>
+                        Nenhum dado para exibir.
+                    </div>
+                    <div class="import-modal-table-wrap import-preview-table-wrap" id="modal-preview-tabela-wrap" hidden>
+                        <table class="compact-table import-modal-table import-preview-table">
+                            <thead id="modal-preview-thead"></thead>
+                            <tbody id="modal-preview-corpo"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="import-modal-footer">
+                    <span class="import-modal-total" id="modal-preview-total"></span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         {% endif %}
     </div>
 </div>
 
 <style>
 .upload-container {
-    max-width: 800px;
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 14px;
+    max-width: 980px;
     margin: 30px auto 0;
+    align-items: start;
+}
+
+.ultimos-envios-panel {
+    position: sticky;
+    top: 16px;
+}
+
+.ultimos-envios-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid #e5e7eb;
+    padding: 10px;
+}
+
+.ultimos-envios-header {
+    margin-bottom: 8px;
+}
+
+.ultimos-envios-header h4 {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #374151;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 700;
+}
+
+.ultimos-envios-lista {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ultimos-envios-arquivo-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    max-width: 100%;
+    padding: 5px 7px;
+    border-radius: 5px;
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    color: #1f2937;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: default;
+    line-height: 1.2;
+}
+
+.ultimos-envios-arquivo-btn i {
+    color: #9ca3af;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.ultimos-envios-arquivo-btn span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.ultimos-envios-arquivo-btn:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.ultimos-envios-vazio {
+    margin: 0 0 8px;
+    font-size: 0.72rem;
+    color: #9ca3af;
+}
+
+.ultimos-envios-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    padding: 5px 8px;
+    border-radius: 5px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    text-decoration: none;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.ultimos-envios-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+    text-decoration: none;
 }
 
 .card-main {
@@ -387,6 +710,7 @@
 /* Estilos para a seção de resultados */
 .results-container {
     margin-top: 30px;
+    grid-column: 1 / -1;
 }
 
 .result-panel {
@@ -523,6 +847,24 @@ button.btn-export {
     text-decoration: none;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.btn-flag0-motivos {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid #dc3545;
+    background: #fff;
+    color: #dc3545;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-flag0-motivos:hover {
+    background: #dc3545;
+    color: #fff;
 }
 
 .btn-import-base {
@@ -882,7 +1224,74 @@ button.btn-export {
     background: #f8f9fa;
 }
 
+.import-modal--preview {
+    width: min(96vw, 1400px);
+}
+
+.btn-export-preview {
+    background: #007bff;
+    color: #fff;
+    border: none;
+}
+
+.btn-export-preview:hover {
+    background: #0056b3;
+    color: #fff;
+}
+
+.import-preview-table-wrap {
+    overflow: auto;
+    max-height: 60vh;
+}
+
+.import-preview-table {
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.import-preview-table thead th {
+    position: sticky;
+    top: 0;
+    background: #f1f3f5;
+    z-index: 1;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.import-preview-table tbody td {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: top;
+}
+
+.import-preview-table tbody td:first-child {
+    font-weight: 600;
+    background: #f8f9fa;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+}
+
 /* Responsividade */
+@media (max-width: 900px) {
+    .upload-container {
+        grid-template-columns: 1fr;
+        margin: 20px 15px 0;
+    }
+
+    .ultimos-envios-panel {
+        position: static;
+        order: 2;
+    }
+
+    .card-main {
+        order: 1;
+        padding: 25px;
+    }
+}
+
 @media (max-width: 768px) {
     .upload-container {
         margin: 20px 15px 0;
@@ -917,6 +1326,243 @@ button.btn-export {
         display: none;
     }
 }
+
+/* ===== Identidade visual das telas ===== */
+.page-envio-header {
+    margin-bottom: 8px;
+}
+
+.page-envio-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+}
+
+.modo-importacao .page-envio-badge {
+    background: #e8f8ee;
+    color: #1e7e34;
+    border: 1px solid #b7e4c7;
+}
+
+.modo-validador .page-envio-badge {
+    background: #e6fffa;
+    color: #0f766e;
+    border: 1px solid #99f6e4;
+}
+
+.modo-validador .page-envio-header h1 {
+    color: #0f766e;
+}
+
+/* ===== Tema do Validador (teal) — diferencia da Importação (verde) ===== */
+.modo-validador .card-main {
+    border-left-color: #0d9488;
+    background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 48%);
+}
+
+.modo-validador .card-icon {
+    color: #0d9488;
+}
+
+.modo-validador .form-control:focus {
+    border-color: #0d9488;
+    box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+}
+
+.modo-validador .btn-process {
+    background-color: #0d9488;
+}
+
+.modo-validador .btn-process:hover {
+    background-color: #0f766e;
+}
+
+.modo-validador .btn-process:disabled {
+    background-color: #6c757d;
+}
+
+.modo-validador .result-panel.info-panel {
+    border-left-color: #0d9488;
+}
+
+.modo-validador .result-panel.info-panel .info-toggle {
+    background: #e6fffa;
+}
+
+.modo-validador .result-panel.info-panel .info-toggle:hover {
+    background: #ccfbf1;
+}
+
+.modo-validador .alert-info {
+    background: #e6fffa;
+    border-color: #99f6e4;
+    color: #115e59;
+}
+
+.layout-select-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.layout-select-row .form-control {
+    flex: 1;
+    min-width: 0;
+}
+
+.layout-instrucao-telefone {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    color: #1e3a8a;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+.layout-instrucao-telefone[hidden] {
+    display: none !important;
+}
+.layout-instrucao-telefone > i {
+    margin-top: 3px;
+    color: #2563eb;
+    flex-shrink: 0;
+}
+.layout-instrucao-telefone strong {
+    display: block;
+    margin-bottom: 4px;
+}
+.layout-instrucao-telefone p {
+    margin: 0;
+}
+
+.btn-visualizar-layout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+    border-radius: 6px;
+    border: 1px solid #94a3b8;
+    background: #f8fafc;
+    color: #334155;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn-visualizar-layout:hover:not(:disabled):not(.disabled) {
+    background: #e2e8f0;
+    border-color: #64748b;
+    color: #0f172a;
+}
+
+.btn-visualizar-layout:disabled,
+.btn-visualizar-layout.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.modo-validador .btn-visualizar-layout:hover:not(:disabled):not(.disabled) {
+    background: #ccfbf1;
+    border-color: #0d9488;
+    color: #115e59;
+}
+
+.import-modal--layout-view {
+    width: min(92vw, 960px);
+    max-height: 90vh;
+}
+
+.import-modal--layout-view .import-modal-body {
+    overflow: auto;
+    padding: 12px 16px 8px;
+}
+
+#modal-layout-view-conteudo {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.import-modal--layout-view .import-modal-table-wrap {
+    flex: 1 1 auto;
+    min-height: 180px;
+    max-height: none;
+    overflow: visible;
+}
+
+.import-modal--layout-view .import-modal-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f3f4f6;
+}
+
+.layout-view-meta {
+    padding: 4px 4px 14px;
+    border-bottom: 1px solid #e9ecef;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+
+.layout-view-meta-item {
+    margin-bottom: 8px;
+}
+
+.layout-view-meta-label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin-bottom: 2px;
+}
+
+.layout-view-readonly-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.layout-view-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.layout-view-badge.sim { background: #dcfce7; color: #166534; }
+.layout-view-badge.nao { background: #f3f4f6; color: #6b7280; }
+
+@media (max-width: 640px) {
+    .layout-select-row {
+        flex-direction: column;
+    }
+    .btn-visualizar-layout {
+        padding: 10px 16px;
+    }
+}
 </style>
 
 <script>
@@ -924,18 +1570,165 @@ document.addEventListener('DOMContentLoaded', function() {
     const arquivoInput = document.getElementById('arquivo');
     const layoutSelect = document.getElementById('layout_id');
     const processButton = document.getElementById('process-button');
+    const btnVisualizarLayout = document.getElementById('btn-visualizar-layout');
+    const modalLayoutView = document.getElementById('modal-layout-view');
+
+    function atualizarBotaoVisualizar() {
+        if (!btnVisualizarLayout || !layoutSelect) return;
+        const layoutId = layoutSelect.value;
+        if (layoutId) {
+            btnVisualizarLayout.classList.remove('disabled');
+            btnVisualizarLayout.disabled = false;
+            btnVisualizarLayout.setAttribute('aria-disabled', 'false');
+        } else {
+            btnVisualizarLayout.classList.add('disabled');
+            btnVisualizarLayout.disabled = true;
+            btnVisualizarLayout.setAttribute('aria-disabled', 'true');
+        }
+    }
+
+    function atualizarInstrucaoTelefone() {
+        const box = document.getElementById('instrucao-telefone-layout');
+        if (!box || !layoutSelect) return;
+        const opt = layoutSelect.options[layoutSelect.selectedIndex];
+        const ehTel = opt && opt.getAttribute('data-telefone') === '1';
+        box.hidden = !ehTel;
+    }
+
+    if (layoutSelect) {
+        layoutSelect.addEventListener('change', function() {
+            atualizarBotaoVisualizar();
+            atualizarInstrucaoTelefone();
+        });
+        atualizarInstrucaoTelefone();
+    }
+
+    function fecharModalLayoutView() {
+        const overlay = document.getElementById('modal-layout-view');
+        if (!overlay) return;
+        overlay.hidden = true;
+        document.body.style.overflow = '';
+    }
+
+    function abrirModalLayoutView() {
+        if (!layoutSelect || !layoutSelect.value) return;
+        const overlay = document.getElementById('modal-layout-view');
+        if (!overlay) {
+            alert('Modal de visualização não encontrado. Atualize a página (Ctrl+F5).');
+            return;
+        }
+        const layoutId = layoutSelect.value;
+        const apiTpl = (btnVisualizarLayout && btnVisualizarLayout.getAttribute('data-api-template')) || '';
+        const apiUrl = apiTpl.replace(/\/0(?=\/?$)/, '/' + encodeURIComponent(layoutId));
+
+        const loading = document.getElementById('modal-layout-view-loading');
+        const erro = document.getElementById('modal-layout-view-erro');
+        const conteudo = document.getElementById('modal-layout-view-conteudo');
+        const corpo = document.getElementById('modal-layout-view-corpo');
+        const totalEl = document.getElementById('modal-layout-view-total');
+
+        overlay.hidden = false;
+        document.body.style.overflow = 'hidden';
+        if (loading) loading.hidden = false;
+        if (erro) { erro.hidden = true; erro.textContent = ''; }
+        if (conteudo) conteudo.hidden = true;
+        if (corpo) corpo.innerHTML = '';
+        if (totalEl) totalEl.textContent = '';
+
+        fetch(apiUrl, { credentials: 'same-origin' })
+            .then(function(resp) { return resp.json().then(function(data) { return { ok: resp.ok, data: data }; }); })
+            .then(function(result) {
+                if (loading) loading.hidden = true;
+                if (!result.ok || !result.data.success) {
+                    if (erro) {
+                        erro.hidden = false;
+                        erro.textContent = (result.data && result.data.message) || 'Não foi possível carregar o layout.';
+                    }
+                    return;
+                }
+                const layout = result.data.layout || {};
+                const colunas = result.data.colunas || [];
+                const nomeEl = document.getElementById('modal-layout-view-nome');
+                const descEl = document.getElementById('modal-layout-view-descricao');
+                if (nomeEl) nomeEl.textContent = layout.NomeLayout || '—';
+                if (descEl) descEl.textContent = layout.Descricao || '—';
+                const boxTel = document.getElementById('modal-layout-view-instrucao-tel');
+                const txtTel = document.getElementById('modal-layout-view-instrucao-tel-texto');
+                if (boxTel) {
+                    if (layout.EhTelefone && layout.InstrucaoTelefone) {
+                        boxTel.hidden = false;
+                        if (txtTel) txtTel.textContent = layout.InstrucaoTelefone;
+                    } else {
+                        boxTel.hidden = true;
+                        if (txtTel) txtTel.textContent = '';
+                    }
+                }
+                if (corpo) {
+                    if (!colunas.length) {
+                        corpo.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Nenhuma coluna cadastrada.</td></tr>';
+                    } else {
+                        corpo.innerHTML = colunas.map(function(col) {
+                            const obrig = col.Obrigatorio
+                                ? '<span class="layout-view-badge sim">Sim</span>'
+                                : '<span class="layout-view-badge nao">Não</span>';
+                            return '<tr>'
+                                + '<td>' + (col.Posicao != null ? col.Posicao : '') + '</td>'
+                                + '<td>' + (col.Descricao || '') + '</td>'
+                                + '<td>' + obrig + '</td>'
+                                + '<td>' + (col.TipoDado || 'texto') + '</td>'
+                                + '<td>' + (col.Validacao || '—') + '</td>'
+                                + '</tr>';
+                        }).join('');
+                    }
+                }
+                if (totalEl) totalEl.textContent = colunas.length + ' coluna(s)';
+                if (conteudo) conteudo.hidden = false;
+            })
+            .catch(function() {
+                if (loading) loading.hidden = true;
+                if (erro) {
+                    erro.hidden = false;
+                    erro.textContent = 'Erro de comunicação ao carregar o layout.';
+                }
+            });
+    }
+
+    if (btnVisualizarLayout) {
+        btnVisualizarLayout.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.disabled || !layoutSelect || !layoutSelect.value) return;
+            abrirModalLayoutView();
+        });
+    }
+    (function setupModalLayoutView() {
+        const overlay = document.getElementById('modal-layout-view');
+        if (!overlay) return;
+        const btnFecharLayout = document.getElementById('modal-layout-view-fechar');
+        const btnOkLayout = document.getElementById('modal-layout-view-ok');
+        if (btnFecharLayout) btnFecharLayout.addEventListener('click', fecharModalLayoutView);
+        if (btnOkLayout) btnOkLayout.addEventListener('click', fecharModalLayoutView);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) fecharModalLayoutView();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !overlay.hidden) fecharModalLayoutView();
+        });
+    })();
     
     function updateProcessButton() {
         const fileSelected = arquivoInput.files.length > 0;
         const layoutSelected = layoutSelect.value !== '';
         processButton.disabled = !(fileSelected && layoutSelected);
-        
-        // Feedback visual
+
+        // Feedback visual — cor conforme o modo da tela
+        const corAtiva = document.body.querySelector('.modo-validador') ? '#0d9488' : '#28a745';
         if (fileSelected && layoutSelected) {
-            processButton.style.backgroundColor = '#28a745';
+            processButton.style.backgroundColor = corAtiva;
         } else {
             processButton.style.backgroundColor = '#6c757d';
         }
+        atualizarBotaoVisualizar();
     }
     
     arquivoInput.addEventListener('change', updateProcessButton);
@@ -944,7 +1737,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('upload-form').addEventListener('submit', function() {
         processButton.disabled = true;
         processButton.classList.add('processing');
-        processButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validando e importando...';
+        processButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% if modo_validador %}Validando...{% else %}Validando e importando...{% endif %}';
     });
     
     // Feedback inicial
@@ -1046,7 +1839,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         vazio.textContent = data.erro;
                         return;
                     }
-                    cache[tipo] = data.items || [];
+                    cache[tipo] = {
+                        items: data.items || [],
+                        total: data.total != null ? data.total : (data.items || []).length,
+                        exibidas: data.exibidas != null ? data.exibidas : (data.items || []).length,
+                        limitado: !!data.limitado,
+                    };
                     exibirItems(tipo, cache[tipo]);
                 })
                 .catch(function() {
@@ -1056,8 +1854,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
         }
 
-        function exibirItems(tipo, items) {
+        function exibirItems(tipo, payload) {
             loading.hidden = true;
+            const items = payload.items || [];
+            const total = payload.total != null ? payload.total : items.length;
+            const exibidas = payload.exibidas != null ? payload.exibidas : items.length;
+
             if (!items.length) {
                 vazio.hidden = false;
                 tabelaWrap.hidden = true;
@@ -1067,7 +1869,12 @@ document.addEventListener('DOMContentLoaded', function() {
             vazio.hidden = true;
             tabelaWrap.hidden = false;
             renderTabela(tipo, items);
-            totalEl.textContent = items.length + ' registro(s)';
+            if (payload.limitado || exibidas < total) {
+                totalEl.textContent = 'Exibindo ' + exibidas + ' de ' + total
+                    + ' — use Excel para ver todos';
+            } else {
+                totalEl.textContent = total + ' registro(s)';
+            }
         }
 
         btnAbrirDetalhes.addEventListener('click', abrirModal);
@@ -1081,11 +1888,213 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.key === 'Escape' && !modalDetalhes.hidden) fecharModal();
         });
     }
+
+    /* Modal TOP 100 */
+    const btnAbrirPreview = document.getElementById('btn-abrir-preview');
+    const modalPreview = document.getElementById('modal-preview');
+    if (btnAbrirPreview && modalPreview) {
+        const previewApiUrl = btnAbrirPreview.dataset.apiUrl;
+        const previewLoading = document.getElementById('modal-preview-loading');
+        const previewVazio = document.getElementById('modal-preview-vazio');
+        const previewTabelaWrap = document.getElementById('modal-preview-tabela-wrap');
+        const previewThead = document.getElementById('modal-preview-thead');
+        const previewCorpo = document.getElementById('modal-preview-corpo');
+        const previewTotal = document.getElementById('modal-preview-total');
+        const btnPreviewFechar = document.getElementById('modal-preview-fechar');
+        let previewCache = null;
+
+        function fecharPreview() {
+            modalPreview.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function renderPreviewTabela(colunas, linhas) {
+            previewThead.innerHTML = '<tr>' + colunas.map(function(col) {
+                return '<th title="' + escapeHtmlPreview(col) + '">' + escapeHtmlPreview(col) + '</th>';
+            }).join('') + '</tr>';
+
+            previewCorpo.innerHTML = '';
+            linhas.forEach(function(linha) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = colunas.map(function(col) {
+                    const val = linha[col] != null ? String(linha[col]) : '';
+                    return '<td title="' + escapeHtmlPreview(val) + '">' + escapeHtmlPreview(val) + '</td>';
+                }).join('');
+                previewCorpo.appendChild(tr);
+            });
+        }
+
+        function escapeHtmlPreview(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function exibirPreviewCache() {
+            previewLoading.hidden = true;
+            previewVazio.hidden = true;
+            previewTabelaWrap.hidden = false;
+            renderPreviewTabela(previewCache.colunas, previewCache.linhas);
+            previewTotal.textContent = 'Exibindo ' + previewCache.exibidas + ' de ' + previewCache.total + ' linha(s)';
+        }
+
+        function abrirPreview() {
+            modalPreview.hidden = false;
+            document.body.style.overflow = 'hidden';
+
+            if (previewCache) {
+                exibirPreviewCache();
+                return;
+            }
+
+            previewLoading.hidden = false;
+            previewVazio.hidden = true;
+            previewTabelaWrap.hidden = true;
+            previewTotal.textContent = '';
+
+            fetch(previewApiUrl)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    previewLoading.hidden = true;
+                    if (data.erro) {
+                        previewVazio.hidden = false;
+                        previewVazio.textContent = data.erro;
+                        return;
+                    }
+                    if (!data.linhas || !data.linhas.length) {
+                        previewVazio.hidden = false;
+                        previewVazio.textContent = 'Nenhum dado para exibir.';
+                        return;
+                    }
+                    previewCache = {
+                        colunas: data.colunas || [],
+                        linhas: data.linhas,
+                        total: data.total_linhas || data.linhas.length,
+                        exibidas: data.exibidas || data.linhas.length,
+                    };
+                    exibirPreviewCache();
+                })
+                .catch(function() {
+                    previewLoading.hidden = true;
+                    previewVazio.hidden = false;
+                    previewVazio.textContent = 'Erro ao carregar a visualização.';
+                });
+        }
+
+        btnAbrirPreview.addEventListener('click', abrirPreview);
+        btnPreviewFechar.addEventListener('click', fecharPreview);
+        modalPreview.addEventListener('click', function(e) {
+            if (e.target === modalPreview) fecharPreview();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !modalPreview.hidden) fecharPreview();
+        });
+    }
+
+    /* Modal Motivos Flag=0 */
+    const btnAbrirFlag0 = document.getElementById('btn-abrir-flag0');
+    const modalFlag0 = document.getElementById('modal-flag0');
+    if (btnAbrirFlag0 && modalFlag0) {
+        const flag0ApiUrl = btnAbrirFlag0.dataset.apiUrl;
+        const flag0ExportUrl = btnAbrirFlag0.dataset.exportUrl;
+        const flag0Loading = document.getElementById('modal-flag0-loading');
+        const flag0Vazio = document.getElementById('modal-flag0-vazio');
+        const flag0TabelaWrap = document.getElementById('modal-flag0-tabela-wrap');
+        const flag0Corpo = document.getElementById('modal-flag0-corpo');
+        const flag0Total = document.getElementById('modal-flag0-total');
+        const flag0Exportar = document.getElementById('modal-flag0-exportar');
+        const flag0Fechar = document.getElementById('modal-flag0-fechar');
+        let flag0Cache = null;
+
+        flag0Exportar.href = flag0ExportUrl;
+
+        function fecharFlag0() {
+            modalFlag0.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function escapeFlag0(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function renderMotivos(motivos) {
+            flag0Corpo.innerHTML = '';
+            motivos.forEach(function(m) {
+                const tr = document.createElement('tr');
+                tr.className = 'erros-row';
+                tr.innerHTML = '<td><strong>' + m.quantidade + '</strong></td>'
+                    + '<td>' + escapeFlag0(m.motivo) + '</td>';
+                flag0Corpo.appendChild(tr);
+            });
+        }
+
+        function abrirFlag0() {
+            modalFlag0.hidden = false;
+            document.body.style.overflow = 'hidden';
+
+            if (flag0Cache) {
+                flag0Loading.hidden = true;
+                flag0Vazio.hidden = true;
+                flag0TabelaWrap.hidden = false;
+                renderMotivos(flag0Cache.motivos);
+                flag0Total.textContent = flag0Cache.flag_0 + ' rejeitado(s) · '
+                    + flag0Cache.motivos.length + ' motivo(s)';
+                return;
+            }
+
+            flag0Loading.hidden = false;
+            flag0Vazio.hidden = true;
+            flag0TabelaWrap.hidden = true;
+            flag0Total.textContent = '';
+
+            fetch(flag0ApiUrl)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    flag0Loading.hidden = true;
+                    if (data.erro) {
+                        flag0Vazio.hidden = false;
+                        flag0Vazio.textContent = data.erro;
+                        return;
+                    }
+                    const motivos = data.motivos || [];
+                    if (!motivos.length) {
+                        flag0Vazio.hidden = false;
+                        flag0Vazio.textContent = 'Nenhum motivo encontrado.';
+                        flag0Total.textContent = '0 registro(s)';
+                        return;
+                    }
+                    flag0Cache = {
+                        motivos: motivos,
+                        flag_0: data.flag_0 || 0,
+                    };
+                    flag0TabelaWrap.hidden = false;
+                    renderMotivos(motivos);
+                    flag0Total.textContent = (data.flag_0 || 0) + ' rejeitado(s) · '
+                        + motivos.length + ' motivo(s) em '
+                        + (data.tabela || '');
+                })
+                .catch(function() {
+                    flag0Loading.hidden = true;
+                    flag0Vazio.hidden = false;
+                    flag0Vazio.textContent = 'Erro ao carregar os motivos.';
+                });
+        }
+
+        btnAbrirFlag0.addEventListener('click', abrirFlag0);
+        flag0Fechar.addEventListener('click', fecharFlag0);
+        modalFlag0.addEventListener('click', function(e) {
+            if (e.target === modalFlag0) fecharFlag0();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !modalFlag0.hidden) fecharFlag0();
+        });
+    }
     
     {% if process_id %}
     document.querySelector('.results-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     {% endif %}
 });
 </script>
-{% endblock %}
 {% endblock %}

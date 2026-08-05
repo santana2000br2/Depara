@@ -1,5 +1,6 @@
-from flask import Blueprint, render_template, redirect, url_for, session, flash
+from flask import Blueprint, render_template, redirect, url_for, session, flash, jsonify
 from datetime import datetime
+import re
 from db.connection import conectar_banco, conectar_homologacao
 from logger import logger
 
@@ -56,25 +57,7 @@ from utils.dados_depara import (
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
-# Mapeamento de tipos de escopo para categorias (quadros)
-ESCOPO_PARA_CATEGORIA = {
-    "PESSOA": ["cond_pag", "escol", "estado", "estadocivil", "municipio", "pais", "profissao", "segmentomercado", "tipologradouro"],
-    "PRODUTOS": ["clasmontadora", "grupolucratividade", "grupoproduto", "pessoacodfabricante", "procedencia", "tabelapreco", "tipoproduto", "unidade"],
-    "VEICULOS": ["combustivel", "corexterna", "corinterna", "marca", "modeloveiculo", "opcional", "setorservico", "tipoos", "tiposervico", "tmo", "veiculoano"],
-    "FINANCEIRO": ["agentecobrador", "banco", "contagerencial", "tipocobranca", "tipocreditodebito", "tipodocumento", "tipoficharazao", "tipotitulo"],
-    "CONTABILIDADE": ["centroresultado", "historicopadrao", "planoconta", "subconta", "tipolote", "tiposubconta"],
-    "GERAL": ["departamento", "estoque", "naturezaoperacao", "equipe", "usuario_depara"]
-}
-
-# Mapeamento de categorias para nomes exibidos
-CATEGORIAS_NOMES = {
-    "PESSOA": "Pessoa",
-    "PRODUTOS": "Produto", 
-    "VEICULOS": "Veículos",
-    "FINANCEIRO": "Financeiro",
-    "CONTABILIDADE": "Contabilidade",
-    "GERAL": "Geral"
-}
+from utils.depara_escopos import CATEGORIAS_NOMES, ESCOPO_PARA_CATEGORIA
 
 def obter_escopos_projeto(projeto_id):
     """Obtém os tipos de escopo vinculados ao projeto"""
@@ -206,22 +189,16 @@ def dashboard():
     # DIAGNÓSTICO DETALHADO
     projeto = session["projeto_selecionado"]
     logger.info("=" * 80)
-    logger.info("🔍 DIAGNÓSTICO DASHBOARD REAL")
+    logger.info("DIAGNÓSTICO DASHBOARD")
     logger.info("=" * 80)
-    logger.info(f"Usuário: {session.get('usuario', {}).get('Nome')}")
+    logger.info(f"Usuário: {session.get('usuario', {}).get('usuario')}")
     logger.info(f"Projeto: {projeto.get('NomeProjeto')}")
     logger.info(f"ProjetoID: {projeto.get('ProjetoID')}")
     logger.info(f"DadosGX: {projeto.get('DadosGX')}")
     logger.info(f"Servidor Homologação: {projeto.get('servidorhomologacao')}")
-    logger.info(f"Usuário Homologação: {projeto.get('usuariohomologacao')}")
-    logger.info(f"Senha Homologação configurada: {'SIM' if projeto.get('senhahomologacao') else 'NÃO'}")
-    
-    # Verificar todos os campos importantes
-    campos_essenciais = ['servidorhomologacao', 'usuariohomologacao', 'senhahomologacao']
-    for campo in campos_essenciais:
-        valor = projeto.get(campo)
-        logger.info(f"Campo '{campo}': '{valor}' (tipo: {type(valor).__name__})")
-    
+    # Credenciais (usuário/senha) não ficam na sessão — carregadas sob demanda
+    logger.info("Credenciais de banco: carregadas sob demanda (não armazenadas na sessão)")
+
     # Continue com o resto do código original...
     
     # Obter dados da sessão
@@ -262,7 +239,7 @@ def dashboard():
         
         # Calcular progresso por categoria
         progresso_categorias = calcular_progresso_por_categoria(dados, escopos_habilitados)
-        
+
         return render_template_dashboard_com_escopo(
             usuario, projeto_selecionado, dados, escopos_habilitados, 
             categorias_habilitadas, progresso_total, progresso_categorias
@@ -276,6 +253,33 @@ def dashboard():
         
         # Retornar estrutura com dados vazios mas com informações de escopo
         return render_template_dashboard_com_escopo(usuario, projeto_selecionado, {}, escopos_habilitados, categorias_habilitadas)
+
+
+@dashboard_bp.route("/verificar-notificacoes", methods=["POST"])
+def verificar_notificacoes():
+    """Verifica e-mails depois que o dashboard já foi entregue ao navegador."""
+    if "usuario" not in session:
+        return jsonify({"success": False, "message": "Sessão expirada"}), 401
+
+    projeto = session.get("projeto_selecionado") or {}
+    projeto_id = projeto.get("ProjetoID")
+    banco_usuario = projeto.get("DadosGX")
+    if not projeto_id or not banco_usuario:
+        return jsonify({"success": False, "message": "Projeto sem banco configurado"}), 400
+
+    try:
+        from utils.depara_notificacao import verificar_todos_blocos_projeto
+
+        resultados = verificar_todos_blocos_projeto(
+            projeto_id,
+            banco_usuario,
+            projeto.get("NomeProjeto", "Projeto"),
+        )
+        enviados = sum(1 for resultado in resultados if resultado.get("enviado"))
+        return jsonify({"success": True, "enviados": enviados})
+    except Exception as exc:
+        logger.warning(f"Verificação assíncrona de notificações ignorada: {exc}")
+        return jsonify({"success": False, "message": "Falha ao verificar notificações"}), 500
 
 def calcular_progresso_por_categoria(dados, escopos_habilitados):
     """Calcula o progresso para cada categoria habilitada"""
@@ -303,6 +307,33 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
     # Inicializar progresso_categorias se None
     if progresso_categorias is None:
         progresso_categorias = {}
+
+    datas_blocos = {}
+    try:
+        from utils.bloco_disponivel import obter_datas_blocos
+        datas_raw = obter_datas_blocos(projeto_selecionado.get("ProjetoID"))
+        for escopo, info in datas_raw.items():
+            data = info.get("DataDisponivel")
+            ultima = info.get("DataUltimaImportacao")
+            datas_blocos[escopo] = {
+                "data": data.strftime("%d/%m/%Y %H:%M") if data and hasattr(data, "strftime") else (str(data) if data else None),
+                "ultima": ultima.strftime("%d/%m/%Y %H:%M") if ultima and hasattr(ultima, "strftime") else (str(ultima) if ultima else None),
+                "layout": info.get("NomeLayout") or info.get("TipoLayout") or "",
+            }
+    except Exception as exc:
+        logger.warning(f"Não foi possível carregar datas dos blocos: {exc}")
+
+    status_layouts_obrigatorios = None
+    try:
+        from utils.projeto_acesso import projeto_eh_arquivo_workflow
+        from utils.layout_importacao_projeto import obter_status_layouts_obrigatorios
+        if projeto_eh_arquivo_workflow(projeto_selecionado):
+            status_layouts_obrigatorios = obter_status_layouts_obrigatorios(
+                projeto_selecionado.get("ProjetoID"),
+                escopos_habilitados,
+            )
+    except Exception as exc:
+        logger.warning("Não foi possível montar indicador de layouts obrigatórios: %s", exc)
     
     # Preencher dados, usando valores reais se disponíveis, senão dados vazios
     template_data = {
@@ -314,6 +345,8 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
         "progresso_total": progresso_total or progresso_vazio,
         "progresso_categorias": progresso_categorias,
         "categorias_nomes": CATEGORIAS_NOMES,
+        "datas_blocos": datas_blocos,
+        "status_layouts_obrigatorios": status_layouts_obrigatorios,
         
         # Dados das categorias (usar dados reais se disponíveis, senão vazios)
         "cond_pag": dados.get("cond_pag", dados_vazios),
@@ -406,33 +439,49 @@ def detalhes_tabela(nome_tabela):
     if "usuario" not in session:
         return redirect(url_for("auth.login"))
 
-    # Usar o projeto selecionado da sessão
     if "projeto_selecionado" not in session:
         flash("Nenhum projeto selecionado. Por favor, selecione um projeto.", "warning")
         return redirect(url_for("auth.trocar_projeto"))
-    
+
+    # Impede SQL injection: apenas identificadores SQL Server válidos
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", nome_tabela or ""):
+        flash("Nome de tabela inválido.", "error")
+        return redirect(url_for("dashboard.dashboard"))
+
     projeto_selecionado = session["projeto_selecionado"]
-    banco_usuario = projeto_selecionado.get("DadosGX", "")
     usuario = session["usuario"]
 
     conn = None
     cursor = None
+    colunas, registros = [], []
     try:
-        # Usar conectar_homologacao() que sempre usa credenciais do projeto
         conn = conectar_homologacao()
         if conn is None:
             raise Exception("Falha na conexão com o banco de dados")
 
         cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM {nome_tabela}")
+        cursor.execute(
+            """
+            SELECT 1
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
+            """,
+            (nome_tabela,),
+        )
+        if not cursor.fetchone():
+            flash("Tabela não encontrada.", "error")
+            return redirect(url_for("dashboard.dashboard"))
+
+        # Identificador já validado + existência confirmada; brackets evitam palavras reservadas
+        cursor.execute(f"SELECT * FROM [{nome_tabela}]")
         colunas = [desc[0] for desc in cursor.description]
         registros = cursor.fetchall()
-        
+
     except Exception as e:
         logger.error(f"Erro ao buscar detalhes de {nome_tabela}: {e}")
         flash("Erro ao carregar detalhes da tabela.", "error")
         colunas, registros = [], []
-        
+
     finally:
         if cursor is not None:
             cursor.close()

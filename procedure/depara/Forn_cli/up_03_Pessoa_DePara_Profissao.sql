@@ -3,6 +3,8 @@
 -- Destino : Profissao_DePara
 -- Procedure: up_03_Pessoa_DePara_Profissao
 -- Params: @BancoDadosGX, @BancoWF
+-- Autor: Aroldo Santana
+-- Data de alteração: 06/07/2026
 -- =============================================================================
 
 USE [DadosGX_Simulacao];  -- ALTERE

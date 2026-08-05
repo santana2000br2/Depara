@@ -34,7 +34,7 @@ def detectar_layout(filename, layouts_rules_map):
     
     # Layouts ordenados por prioridade
     layouts_prioridade = ['Forn_cli', 'Forn_cli_Endereco', 'Forn_cli_Documento', 
-                         'Produto', 'Veiculo', 'ProdutoEstoque', 'Financeiro']
+                         'Produto', 'Veiculo', 'ProdutoEstoque', 'ProdLocacao', 'MovimentoEstoque', 'Financeiro']
     
     for layout in layouts_prioridade:
         for i, estrategia in enumerate(estrategias):

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DE x PARA - Configuração de E-mail</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <style>
+        .email-page {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .email-header h2 {
+            margin: 0 0 6px 0;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .email-header p {
+            color: #6c757d;
+            margin: 0 0 20px 0;
+        }
+
+        .email-card {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+
+        .email-card h3 {
+            margin: 0 0 16px 0;
+            color: #34495e;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.9rem;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group input[type="password"],
+        .form-group textarea {
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 0.95rem;
+        }
+
+        .form-group textarea {
+            min-height: 72px;
+            resize: vertical;
+        }
+
+        .checkbox-inline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .info-box {
+            background: #eef5ff;
+            border: 1px solid #cfe2ff;
+            color: #084298;
+            border-radius: 6px;
+            padding: 12px 14px;
+            margin-bottom: 16px;
+            font-size: 0.92rem;
+        }
+
+        .blocos-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .blocos-table th,
+        .blocos-table td {
+            border-bottom: 1px solid #e9ecef;
+            padding: 12px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .blocos-table th {
+            background: #f8f9fa;
+            color: #495057;
+            font-size: 0.9rem;
+        }
+
+        .bloco-desabilitado {
+            opacity: 0.55;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-ok {
+            background: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .badge-off {
+            background: #e2e3e5;
+            color: #41464b;
+        }
+
+        .badge-warn {
+            background: #fff3cd;
+            color: #664d03;
+        }
+
+        .actions-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 6px;
+            padding: 10px 16px;
+            cursor: pointer;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            display: none;
+            border-radius: 6px;
+            padding: 12px 14px;
+            margin-bottom: 16px;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d1e7dd;
+            color: #0f5132;
+            border: 1px solid #badbcc;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #842029;
+            border: 1px solid #f5c2c7;
+        }
+
+        .test-row {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .test-row .form-group {
+            flex: 1;
+            min-width: 240px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% include 'partials/sidebar.html' %}
+
+        <div class="main-content">
+            <button class="toggle-sidebar-mobile" id="toggleSidebarMobile">
+                <i class="fas fa-bars"></i>
+            </button>
+
+            <div class="email-page">
+                <div class="email-header">
+                    <h2><i class="fas fa-envelope"></i> Configuração de E-mail Automático</h2>
+                    <p>
+                        Configuração global utilizada por todos os projetos. Quando qualquer bloco
+                        De/Para atingir 100% de conclusão, todos os destinatários serão avisados.
+                    </p>
+                </div>
+
+                <div id="alertBox" class="alert"></div>
+
+                <div class="email-card">
+                    <h3><i class="fas fa-server"></i> Servidor SMTP</h3>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="smtp_host">Servidor SMTP *</label>
+                            <input type="text" id="smtp_host" placeholder="smtp.empresa.com.br">
+                        </div>
+                        <div class="form-group">
+                            <label for="smtp_port">Porta</label>
+                            <input type="number" id="smtp_port" value="587" min="1" max="65535">
+                        </div>
+                        <div class="form-group">
+                            <label for="email_remetente">E-mail remetente *</label>
+                            <input type="email" id="email_remetente" placeholder="depara@empresa.com.br">
+                        </div>
+                        <div class="form-group">
+                            <label for="smtp_usuario">Usuário SMTP</label>
+                            <input type="text" id="smtp_usuario" placeholder="usuario ou e-mail">
+                        </div>
+                        <div class="form-group">
+                            <label for="smtp_senha">Senha SMTP</label>
+                            <input type="password" id="smtp_senha" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
+                            <small id="hint_smtp_senha" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
+                        </div>
+                    </div>
+
+                    <div class="checkbox-inline">
+                        <input type="checkbox" id="usar_tls" checked>
+                        <label for="usar_tls">Usar TLS (recomendado para porta 587)</label>
+                    </div>
+                </div>
+
+                <div class="email-card">
+                    <h3><i class="fas fa-users"></i> Destinatários das notificações</h3>
+
+                    <div class="form-group">
+                        <label for="destinatarios">Lista de e-mails *</label>
+                        <textarea id="destinatarios" rows="4"
+                                  placeholder="email1@empresa.com, email2@empresa.com"></textarea>
+                    </div>
+
+                    <div class="actions-bar">
+                        <button type="button" class="btn btn-primary" id="btnSalvar">
+                            <i class="fas fa-save"></i> Salvar configuração
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="btnTestar">
+                            <i class="fas fa-paper-plane"></i> Testar envio para todos
+                        </button>
+                        {% if projeto_selecionado %}
+                        <button type="button" class="btn btn-success" id="btnVerificar">
+                            <i class="fas fa-sync-alt"></i> Verificar blocos concluídos agora
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260715"></script>
+    <script>
+        const alertBox = document.getElementById('alertBox');
+
+        function mostrarAlerta(mensagem, tipo) {
+            alertBox.textContent = mensagem;
+            alertBox.className = 'alert show ' + (tipo === 'success' ? 'alert-success' : 'alert-error');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function coletarSmtp() {
+            return {
+                smtp_host: document.getElementById('smtp_host').value.trim(),
+                smtp_port: parseInt(document.getElementById('smtp_port').value, 10) || 587,
+                smtp_usuario: document.getElementById('smtp_usuario').value.trim(),
+                smtp_senha: document.getElementById('smtp_senha').value,
+                email_remetente: document.getElementById('email_remetente').value.trim(),
+                destinatarios: document.getElementById('destinatarios').value.trim(),
+                usar_tls: document.getElementById('usar_tls').checked,
+                ativo: true,
+            };
+        }
+
+        function aplicarConfig(data) {
+            const smtp = data.smtp || {};
+            document.getElementById('smtp_host').value = smtp.smtp_host || '';
+            document.getElementById('smtp_port').value = smtp.smtp_port || 587;
+            document.getElementById('smtp_usuario').value = smtp.smtp_usuario || '';
+            document.getElementById('smtp_senha').value = '';
+            const hintSmtp = document.getElementById('hint_smtp_senha');
+            if (hintSmtp) {
+                hintSmtp.style.display = smtp.smtp_senha_configurada ? 'block' : 'none';
+            }
+            document.getElementById('email_remetente').value = smtp.email_remetente || '';
+            document.getElementById('destinatarios').value = smtp.destinatarios || '';
+            document.getElementById('usar_tls').checked = smtp.usar_tls !== false;
+
+        }
+
+        async function carregarConfig() {
+            const resp = await fetch('{{ url_for("email.api_obter_config") }}');
+            const data = await resp.json();
+            if (data.success) {
+                aplicarConfig(data);
+            } else {
+                mostrarAlerta(data.message || 'Erro ao carregar configuração.', 'error');
+            }
+        }
+
+        document.getElementById('btnSalvar').addEventListener('click', async () => {
+            const btn = document.getElementById('btnSalvar');
+            btn.disabled = true;
+            try {
+                const resp = await fetch('{{ url_for("email.api_salvar_config") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        smtp: coletarSmtp()
+                    }),
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    mostrarAlerta(data.message, 'success');
+                    await carregarConfig();
+                } else {
+                    mostrarAlerta(data.message || 'Erro ao salvar.', 'error');
+                }
+            } catch (err) {
+                mostrarAlerta('Erro de comunicação ao salvar.', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('btnTestar').addEventListener('click', async () => {
+            if (!document.getElementById('destinatarios').value.trim()) {
+                mostrarAlerta('Cadastre pelo menos um destinatário para o teste.', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btnTestar');
+            btn.disabled = true;
+            try {
+                const saveResp = await fetch('{{ url_for("email.api_salvar_config") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        smtp: coletarSmtp()
+                    }),
+                });
+                const saveData = await saveResp.json();
+                if (!saveData.success) {
+                    mostrarAlerta(saveData.message || 'Erro ao salvar antes do teste.', 'error');
+                    return;
+                }
+
+                const resp = await fetch('{{ url_for("email.api_testar_email") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await resp.json();
+                mostrarAlerta(data.message, data.success ? 'success' : 'error');
+            } catch (err) {
+                mostrarAlerta('Erro ao enviar e-mail de teste.', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        const btnVerificar = document.getElementById('btnVerificar');
+        if (btnVerificar) btnVerificar.addEventListener('click', async () => {
+            const btn = document.getElementById('btnVerificar');
+            btn.disabled = true;
+            try {
+                const resp = await fetch('{{ url_for("email.api_verificar_notificacoes") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await resp.json();
+                mostrarAlerta(data.message, data.success ? 'success' : 'error');
+                if (data.success) {
+                    await carregarConfig();
+                }
+            } catch (err) {
+                mostrarAlerta('Erro ao verificar notificações.', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', carregarConfig);
+    </script>
+</body>
+</html>

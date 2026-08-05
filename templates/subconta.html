@@ -6,9 +6,9 @@
     <!-- TailwindCSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome para ícones -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <!-- Biblioteca XLSX para exportação -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         .tooltip {
             position: relative;
@@ -158,6 +158,16 @@
             cursor: not-allowed !important;
         }
 
+        /* Cadeado via CSS: evita repetir o <i> em milhares de células */
+        .campo-bloqueado::after {
+            content: "\f023";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            color: #9ca3af;
+            float: right;
+            margin-top: 4px;
+        }
+
         
 
         .filtro-oculto {
@@ -236,9 +246,9 @@
                 <span id="contadorAlteracoes" class="bg-white text-green-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold ml-2">0</span>
             </button>
 
-            <!-- Filtro S/DePara e Inválidos -->
+            <!-- Filtro S/DePara e Inválidos (processado no servidor) -->
             <label class="flex items-center space-x-2 cursor-pointer">
-                <input type="checkbox" id="filtroProblemas" class="rounded border-gray-300">
+                <input type="checkbox" id="filtroProblemas" class="rounded border-gray-300" {% if filtro_ativo %}checked{% endif %}>
                 <span class="text-sm font-medium">Mostrar apenas S/DePara e Códigos Inválidos</span>
             </label>
 
@@ -265,6 +275,23 @@
             <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;">
         </div>
     </div>
+
+    <!-- Aviso de registros exibidos -->
+    {% if filtro_ativo or registros_truncados %}
+    <div class="w-full max-w-6xl mb-4 p-3 rounded-md {% if registros_truncados %}bg-orange-100 text-orange-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+        {% if filtro_ativo %}
+            <i class="fas fa-filter mr-1"></i>
+            Filtro ativo: exibindo {{ registros_exibidos }} registro(s) com S/DePara ou código inválido, de um total de {{ total_registros }}.
+        {% endif %}
+        {% if registros_truncados %}
+            <div class="mt-1">
+                <i class="fas fa-exclamation-triangle mr-1"></i>
+                A tabela mostra apenas os primeiros {{ limite_render }} registros para não travar o navegador.
+                Use o filtro ou a exportação para Excel para trabalhar com todos os dados.
+            </div>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <!-- Loading overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
@@ -309,61 +336,44 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200" id="tbodyRegistros">
-                {% for registro in registros %}
-                <tr class="hover:bg-blue-50 registro-linha" 
-                    data-id="{{ registro.id }}"
-                    data-codigo-wf="{{ registro.SubConta_Codigo or '' }}"
-                    data-descricao-wf="{{ registro.SubConta_Descricao or '' }}">
-                    {% for coluna in colunas %}
-                        {% set valor = registro[coluna] %}
-                        {% set is_codigo_invalido = coluna == 'SubConta_Codigo' and (valor is none or valor|string|trim == '' or (valor != 'S/DePara' and valor|string not in codigos_wf)) %}
-                        {% set is_codigo_valido = coluna == 'SubConta_Codigo' and valor and valor != 'S/DePara' and valor|string in codigos_wf %}
-                        {% set is_coluna_origem = coluna in ['id', 'cdbdados', 'tpsubconta', 'cdsubconta', 'dcsubconta', 'cg_cgccpf', 'NMSUBCONTA', 'CG_NM', 'CG_CD', 'PESSOA_CODIGO', 'PESSOA_NOME', 'SUBCONTA_ID_PREVIEW', 'SUBCONTA_DESCRICAO_PREVIEW', 'TIPOSUBCONTA_CODIGO_PREVIEW', 'ESTRUTURA_CODIGO', 'FLAG', 'CADASTRADO_WF'] %}
-                        {% set is_coluna_codigo_editavel = coluna == 'SubConta_Codigo' %}
-                        {% set is_coluna_descricao = coluna == 'SubConta_Descricao' %}
-                        {% set is_coluna_bloqueada = coluna not in ['SubConta_Codigo'] %}
-                        
-                        <td class="px-4 py-2 text-gray-700 text-sm 
-                                   {% if coluna == 'id' %}coluna-fixa font-semibold{% endif %}
-                                   {% if is_coluna_origem %} coluna-origem {% endif %}
-                                   {% if is_coluna_descricao %} descricao-cell descricao-automatica {% endif %}
-                                   {% if is_coluna_bloqueada and not is_coluna_origem %} campo-bloqueado {% endif %}
-                                   {% if coluna == 'SubConta_Codigo' and valor == 'S/DePara' %} bg-yellow-200 {% endif %}
-                                   {% if is_codigo_invalido %} codigo-invalido tooltip {% endif %}
-                                   {% if is_codigo_valido %} codigo-valido {% endif %}
-                                   {% if is_coluna_codigo_editavel %} editable-cell cursor-pointer {% endif %}"
-                            {% if is_coluna_codigo_editavel %} 
-                                data-field="{{ coluna }}" 
-                                data-original-value="{{ valor or '' }}"
-                            {% endif %}
-                            {% if is_codigo_invalido %}
-                                data-tooltip="Bases devem ser Sincronizadas"
-                            {% endif %}>
-                            
-                            {% if is_coluna_codigo_editavel %}
+                {%- for registro in registros -%}
+                <tr class="hover:bg-blue-50 registro-linha" data-id="{{ registro.id }}" data-codigo-wf="{{ registro.SubConta_Codigo or '' }}" data-descricao-wf="{{ registro.SubConta_Descricao or '' }}">
+                    {%- for coluna in colunas -%}
+                        {%- set valor = registro[coluna] -%}
+                        {%- set is_codigo_invalido = coluna == 'SubConta_Codigo' and (valor is none or valor|string|trim == '' or (valor != 'S/DePara' and valor|string not in codigos_wf)) -%}
+                        {%- set is_codigo_valido = coluna == 'SubConta_Codigo' and valor and valor != 'S/DePara' and valor|string in codigos_wf -%}
+                        {%- set is_coluna_origem = coluna in ['id', 'cdbdados', 'tpsubconta', 'cdsubconta', 'dcsubconta', 'cg_cgccpf', 'NMSUBCONTA', 'CG_NM', 'CG_CD', 'PESSOA_CODIGO', 'PESSOA_NOME', 'SUBCONTA_ID_PREVIEW', 'SUBCONTA_DESCRICAO_PREVIEW', 'TIPOSUBCONTA_CODIGO_PREVIEW', 'ESTRUTURA_CODIGO', 'FLAG', 'CADASTRADO_WF'] -%}
+                        {%- set is_coluna_codigo_editavel = coluna == 'SubConta_Codigo' -%}
+                        {%- set is_coluna_descricao = coluna == 'SubConta_Descricao' -%}
+                        {%- set is_coluna_bloqueada = coluna not in ['SubConta_Codigo'] -%}
+                        {%- set classes = ['px-4 py-2 text-gray-700 text-sm'] -%}
+                        {%- if coluna == 'id' %}{% set _ = classes.append('coluna-fixa font-semibold') %}{% endif -%}
+                        {%- if is_coluna_origem %}{% set _ = classes.append('coluna-origem') %}{% endif -%}
+                        {%- if is_coluna_descricao %}{% set _ = classes.append('descricao-cell descricao-automatica') %}{% endif -%}
+                        {%- if is_coluna_bloqueada and not is_coluna_origem %}{% set _ = classes.append('campo-bloqueado') %}{% endif -%}
+                        {%- if coluna == 'SubConta_Codigo' and valor == 'S/DePara' %}{% set _ = classes.append('bg-yellow-200') %}{% endif -%}
+                        {%- if is_codigo_invalido %}{% set _ = classes.append('codigo-invalido tooltip') %}{% endif -%}
+                        {%- if is_codigo_valido %}{% set _ = classes.append('codigo-valido') %}{% endif -%}
+                        {%- if is_coluna_codigo_editavel %}{% set _ = classes.append('editable-cell cursor-pointer') %}{% endif -%}
+                        <td class="{{ classes | join(' ') }}"
+                            {%- if is_coluna_codigo_editavel %} data-field="{{ coluna }}" data-original-value="{{ valor or '' }}"{% endif -%}
+                            {%- if is_codigo_invalido %} data-tooltip="Bases devem ser Sincronizadas"{% endif -%}
+                        >
+                            {%- if is_coluna_codigo_editavel -%}
                                 <span class="editable-content">{{ valor or '' }}</span>
-                            {% else %}
+                            {%- else -%}
                                 {{ valor or '' }}
-                            {% endif %}
-                            
-                            {% if is_codigo_invalido %}
-                                <span class="tooltiptext">
-                                    <i class="fas fa-exclamation-triangle mr-1"></i>
-                                    Bases devem ser Sincronizadas
-                                </span>
-                            {% endif %}
-
-                            {% if is_coluna_descricao and not valor %}
+                            {%- endif -%}
+                            {%- if is_codigo_invalido -%}
+                                <span class="tooltiptext"><i class="fas fa-exclamation-triangle mr-1"></i> Bases devem ser Sincronizadas</span>
+                            {%- endif -%}
+                            {%- if is_coluna_descricao and not valor -%}
                                 <span class="text-gray-400 text-xs italic">(será preenchida automaticamente)</span>
-                            {% endif %}
-
-                            {% if is_coluna_bloqueada and not is_coluna_origem %}
-                                <i class="fas fa-lock text-gray-400 float-right mt-1"></i>
-                            {% endif %}
+                            {%- endif -%}
                         </td>
-                    {% endfor %}
+                    {%- endfor -%}
                 </tr>
-                {% endfor %}
+                {%- endfor %}
             </tbody>
         </table>
         {% else %}
@@ -377,10 +387,10 @@
     <script>
         // Variáveis globais
         let alteracoesPendentes = new Map();
-        let filtroAtivo = false;
+        let filtroAtivo = {{ 'true' if filtro_ativo else 'false' }};
         let celulaEditando = null;
         // Garantir que codigos_wf seja sempre um Set válido
-        const codigos_wf_raw = {{ codigos_wf | tojson | safe }};
+        const codigos_wf_raw = {{ codigos_wf | list | tojson | safe }};
         const codigos_wf = new Set(Array.isArray(codigos_wf_raw) ? codigos_wf_raw : []);
         const codigos_wf_normalizados = new Set(Array.from(codigos_wf).map(v => String(v).trim()));
 
@@ -404,19 +414,28 @@
             document.getElementById('fileInput').click();
         });
 
-        // Filtro de problemas
+        // Filtro de problemas: recarrega a página para o servidor filtrar,
+        // pois com muitos registros o navegador não recebe a tabela inteira.
         document.getElementById('filtroProblemas').addEventListener('change', function() {
-            filtroAtivo = this.checked;
-            aplicarFiltro();
-            
-            // Apenas mudar o texto do botão, sem alterar a cor
-            const btnExport = document.getElementById('btnExport');
-            if (filtroAtivo) {
-                btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Filtrados';
-            } else {
-                btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
+            if (alteracoesPendentes.size > 0 &&
+                !confirm('Existem alterações não salvas que serão perdidas. Continuar?')) {
+                this.checked = filtroAtivo;
+                return;
             }
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            const url = new URL(window.location.href);
+            if (this.checked) {
+                url.searchParams.set('filtro', '1');
+            } else {
+                url.searchParams.delete('filtro');
+            }
+            window.location.href = url.toString();
         });
+
+        // Ajustar texto do botão de exportação conforme o filtro
+        if (filtroAtivo) {
+            document.getElementById('btnExport').innerHTML = '<i class="fas fa-file-excel"></i> Exportar Filtrados';
+        }
 
         // Salvar todas as alterações
         document.getElementById('btnSalvarTudo').addEventListener('click', salvarTodasAlteracoes);
@@ -506,23 +525,6 @@
             // Inicializar o estado do botão
             atualizarContadorAlteracoes();
         });
-
-        function aplicarFiltro() {
-            const linhas = document.querySelectorAll('.registro-linha');
-            linhas.forEach(linha => {
-                const codigoWfRaw = linha.getAttribute('data-codigo-wf') || '';
-                const codigoWf = codigoWfRaw.trim();
-                const codigoUpper = codigoWf.toUpperCase();
-                const isSDePara = codigoUpper === 'S/DEPARA';
-                const isInvalido = linha.querySelector('.codigo-invalido') !== null;
-                
-                if (filtroAtivo && !(isSDePara || isInvalido)) {
-                    linha.classList.add('filtro-oculto');
-                } else {
-                    linha.classList.remove('filtro-oculto');
-                }
-            });
-        }
 
         function exportarRegistrosFiltrados() {
             const registrosFiltrados = [];

@@ -11,34 +11,51 @@
             </a>
         </li>
         
-        <!-- MENU DE IMPORTAÇÃO - SISTEMA NOVO - SEMPRE EXPANDIDO -->
-        <!-- No partials/sidebar.html, atualize o menu de importação -->
-<li class="menu-with-submenu active">
-    <a href="#" class="{% if 'importacao' in request.endpoint or 'layout' in request.endpoint %}active{% endif %}">
-        <i class="fas fa-file-import"></i> <span>Importação (Novo)</span>
-        <i class="fas fa-chevron-down dropdown-arrow"></i>
-    </a>
-    <ul class="submenu" style="display: block; max-height: none;">
-        <!-- Gerenciar Layouts - Apenas ADMs -->
-        {% if usuario and usuario.adm == 1 %}
-        <li>
-            <a href="{{ url_for('layout.listar_layouts') }}" {% if request.endpoint == 'layout.listar_layouts' %}class="active"{% endif %}>
-                <i class="fas fa-table"></i> <span>Gerenciar Layouts</span>
+        <!-- ENVIO DE ARQUIVOS (projetos Arquivo X Workflow) -->
+        {% if projeto_arquivo_workflow %}
+        <li class="menu-with-submenu {% if 'validador_estrutura' in request.endpoint or 'importacao' in request.endpoint or 'layout' in request.endpoint or 'historico_envio' in request.endpoint %}active{% endif %}">
+            <a href="#" class="{% if 'validador_estrutura' in request.endpoint or 'importacao' in request.endpoint or 'layout' in request.endpoint or 'historico_envio' in request.endpoint %}active{% endif %}">
+                <i class="fas fa-file-import"></i> <span>Envio de arquivos</span>
+                <i class="fas fa-chevron-down dropdown-arrow"></i>
             </a>
+            <ul class="submenu" style="display: {% if 'validador_estrutura' in request.endpoint or 'importacao' in request.endpoint or 'layout' in request.endpoint or 'historico_envio' in request.endpoint %}block{% else %}none{% endif %};">
+                {% if usuario and usuario.adm == 1 %}
+                <li>
+                    <a href="{{ url_for('layout.listar_layouts') }}" {% if request.endpoint == 'layout.listar_layouts' %}class="active"{% endif %}>
+                        <i class="fas fa-table"></i> <span>Gerenciar Layouts</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                <li>
+                    <a href="{{ url_for('validador_estrutura.index') }}" {% if request.endpoint == 'validador_estrutura.index' %}class="active"{% endif %}>
+                        <i class="fas fa-clipboard-check"></i> <span>Validador de Estrutura</span>
+                    </a>
+                </li>
+
+                {% if importacao_liberada_projeto %}
+                <li>
+                    <a href="{{ url_for('importacao.index') }}" {% if request.endpoint == 'importacao.index' %}class="active"{% endif %}>
+                        <i class="fas fa-file-upload"></i> <span>Enviar para Migração</span>
+                    </a>
+                </li>
+                {% else %}
+                <li>
+                    <span class="submenu-disabled" title="Marque Importação Liberada no cadastro do projeto">
+                        <i class="fas fa-lock"></i> <span>Enviar para Migração (bloqueado)</span>
+                    </span>
+                </li>
+                {% endif %}
+            </ul>
         </li>
         {% endif %}
-        
-        <!-- Enviar Arquivo - Para todos os usuários -->
+
+        {% if usuario and usuario.adm == 1 %}
         <li>
-            <a href="{{ url_for('importacao.index') }}" {% if request.endpoint == 'importacao.index' %}class="active"{% endif %}>
-                <i class="fas fa-file-upload"></i> <span>Enviar Arquivo (Layout)</span>
+            <a href="{{ url_for('email.index') }}" {% if request.endpoint == 'email.index' %}class="active"{% endif %}>
+                <i class="fas fa-envelope"></i> <span>E-mail</span>
             </a>
         </li>
-    </ul>
-</li>
-
-        
-        {% if usuario and usuario.adm == 1 %}
         <li>
             <a href="{{ url_for('usuarios.gerenciar_usuarios') }}" {% if request.endpoint == 'usuarios.gerenciar_usuarios' %}class="active"{% endif %}>
                 <i class="fas fa-users-cog"></i> <span>Gerenciar Usuários</span>

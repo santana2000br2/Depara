@@ -1,3 +1,4 @@
+cryptography>=42.0.0,<46
 Flask==2.3.3
 Werkzeug==2.3.7
 # pyodbc 5.x e pandas 2.2.3+ tem wheels para Python 3.13; versoes antigas forcam build e quebram (pkg_resources)
@@ -7,3 +8,4 @@ openpyxl==3.1.2
 python-dotenv==1.0.0
 waitress>=3.0.0,<4
 bcrypt>=4.1.2,<5
+Pillow>=10.0.0,<12

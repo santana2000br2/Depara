@@ -261,11 +261,10 @@ def gerar_depara_pessoa_mg_standalone(banco_gx, banco_wf):
     try:
         resumo = gerar_depara_pessoa_mg(cursor, banco_gx, banco_wf)
         conn.commit()
-        msg = (
-            f"De/Para gerado via procedure(s): "
-            f"{', '.join(resumo.get('procedures_executadas', [])) or 'up_01–up_04'}. "
-            f"{formatar_resumo_depara(resumo)}"
-        )
+        detalhe = formatar_resumo_depara(resumo)
+        if detalhe:
+            logger.info("De/Para Pessoa_MG: %s", detalhe)
+        msg = "De/Para gerado com sucesso."
         return True, msg, resumo
     except Exception as e:
         conn.rollback()
@@ -277,9 +276,10 @@ def gerar_depara_pessoa_mg_standalone(banco_gx, banco_wf):
 
 
 def formatar_resumo_depara(resumo):
+    """Resumo padronizado do De/Para para todas as importações."""
     if not resumo:
         return ''
-    partes = []
+
     labels = {
         'segmento_mercado': 'Segmento Mercado',
         'escolaridade': 'Escolaridade',
@@ -290,13 +290,44 @@ def formatar_resumo_depara(resumo):
         'estado': 'Estado',
         'pais': 'País',
         'banco': 'Banco',
+        'unidade': 'Unidade',
+        'tipo_produto': 'Tipo Produto',
+        'grupo_lucratividade': 'Grupo Lucratividade',
+        'grupo_produto': 'Grupo Produto',
+        'procedencia': 'Procedência',
+        'tabela_preco': 'Tabela Preço',
+        'estoque': 'Estoque',
+        'natureza_operacao': 'Natureza Operação',
+        'departamento': 'Departamento',
+        'modelo_veiculo': 'Modelo Veículo',
+        'cor_externa': 'Cor Externa',
+        'cor_interna': 'Cor Interna',
+        'veiculo_ano': 'Veículo Ano',
+        'marca': 'Marca',
+        'tipo_os': 'Tipo OS',
+        'agente_cobrador': 'Agente Cobrador',
+        'conta_gerencial': 'Conta Gerencial',
+        'tipo_titulo': 'Tipo Título',
     }
     meta = {'via_procedure', 'procedures_executadas'}
-    for chave, label in labels.items():
-        if chave in meta or chave not in resumo:
+    partes = []
+
+    # Mantém ordem conhecida; depois inclui chaves novas automaticamente
+    chaves = [c for c in labels if c in resumo]
+    for chave in resumo:
+        if chave in meta or chave in chaves:
             continue
-        item = resumo.get(chave, {})
-        if resumo.get('via_procedure'):
+        if isinstance(resumo.get(chave), dict) and (
+            'vinculados_wf' in resumo[chave] or 'pendentes' in resumo[chave]
+        ):
+            chaves.append(chave)
+
+    for chave in chaves:
+        item = resumo.get(chave) or {}
+        if not isinstance(item, dict):
+            continue
+        label = labels.get(chave) or chave.replace('_', ' ').title()
+        if resumo.get('via_procedure') or 'vinculados_wf' in item:
             partes.append(
                 f"{label}: {item.get('vinculados_wf', 0)} vinculado(s) WF, "
                 f"{item.get('pendentes', 0)} S/DePara"
@@ -306,6 +337,7 @@ def formatar_resumo_depara(resumo):
                 f"{label}: {item.get('inseridos', 0)} novo(s), "
                 f"{item.get('atualizados_wf', 0)} vinculado(s) ao WF"
             )
+
     if resumo.get('procedures_executadas'):
         partes.append(f"({len(resumo['procedures_executadas'])} procedure(s))")
     return ' · '.join(partes)

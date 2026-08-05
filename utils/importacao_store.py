@@ -74,6 +74,40 @@ def salvar_processamento(
     df_avisos.to_pickle(pasta / "avisos.pkl")
 
 
+def salvar_importacao_resultado(process_id, usuario_id, importacao_resultado):
+    """Persiste resumo da importação automática no meta do processamento."""
+    pasta = _process_dir(process_id)
+    meta_file = _meta_path(process_id)
+    if not meta_file.exists():
+        return
+
+    try:
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    if str(meta.get("usuario_id")) != str(usuario_id):
+        return
+
+    # Só o necessário para UI/API de Flag=0 (sem objetos não serializáveis)
+    resumo = (importacao_resultado or {}).get("resumo") or {}
+    meta["importacao_resultado"] = {
+        "sucesso": bool((importacao_resultado or {}).get("sucesso")),
+        "mensagem": (importacao_resultado or {}).get("mensagem") or "",
+        "banco_gx": (importacao_resultado or {}).get("banco_gx") or "",
+        "tabela_destino": (importacao_resultado or {}).get("tabela_destino") or "",
+        "tipo": (importacao_resultado or {}).get("tipo") or "",
+        "procedure": (importacao_resultado or {}).get("procedure") or "",
+        "resumo_texto": (importacao_resultado or {}).get("resumo_texto") or "",
+        "depara_texto": (importacao_resultado or {}).get("depara_texto") or "",
+        "flag_0": int(resumo.get("flag_0") or 0),
+        "flag_1": int(resumo.get("flag_1") or 0),
+        "total": int(resumo.get("total") or 0),
+    }
+    pasta.mkdir(parents=True, exist_ok=True)
+    meta_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+
 def carregar_processamento(process_id, usuario_id):
     pasta = _process_dir(process_id)
     meta_file = _meta_path(process_id)
@@ -99,6 +133,7 @@ def carregar_processamento(process_id, usuario_id):
             "df_processado": pd.read_pickle(pasta / "processado.pkl"),
             "df_erros": pd.read_pickle(pasta / "erros.pkl"),
             "df_avisos": pd.read_pickle(pasta / "avisos.pkl"),
+            "importacao_resultado": meta.get("importacao_resultado"),
         }
     except Exception as exc:
         logger.error("Erro ao carregar exportação %s: %s", process_id, exc)

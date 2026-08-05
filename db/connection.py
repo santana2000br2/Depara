@@ -18,16 +18,100 @@ def conectar_banco():
         logger.error(f"Erro de conexão: {e}")
         return None
 
+
+def buscar_credenciais_projeto(projeto_id):
+    """Busca credenciais de conexão no banco (senhas descriptografadas em memória)."""
+    if not projeto_id:
+        return None
+    from utils.credential_crypto import descriptografar_segredo
+
+    conn = conectar_banco()
+    if not conn:
+        return None
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT
+                ProjetoID,
+                NomeProjeto,
+                DadosGX,
+                servidorproducao,
+                usuarioProducao,
+                senhaproducao,
+                servidorhomologacao,
+                usuariohomologacao,
+                senhahomologacao,
+                BancoHomo,
+                bancoProducao
+            FROM Projeto
+            WHERE ProjetoID = ?
+        """, (projeto_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "ProjetoID": row.ProjetoID,
+            "NomeProjeto": row.NomeProjeto,
+            "DadosGX": row.DadosGX,
+            "servidorproducao": row.servidorproducao,
+            "usuarioProducao": descriptografar_segredo(row.usuarioProducao),
+            "senhaproducao": descriptografar_segredo(row.senhaproducao),
+            "servidorhomologacao": row.servidorhomologacao,
+            "usuariohomologacao": descriptografar_segredo(row.usuariohomologacao),
+            "senhahomologacao": descriptografar_segredo(row.senhahomologacao),
+            "BancoHomo": row.BancoHomo,
+            "bancoProducao": row.bancoProducao,
+        }
+    except Exception as e:
+        logger.error(f"Erro ao buscar credenciais do projeto {projeto_id}: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def obter_credenciais_producao(projeto_id):
+    """Credenciais de produção (senha já em texto claro para conexão)."""
+    try:
+        creds = buscar_credenciais_projeto(projeto_id)
+        if not creds or not creds.get("bancoProducao"):
+            return None
+        return {
+            "banco": creds.get("bancoProducao"),
+            "usuario": creds.get("usuarioProducao"),
+            "senha": creds.get("senhaproducao"),
+            "servidor": creds.get("servidorproducao"),
+        }
+    except Exception as e:
+        logger.error(f"Erro ao obter credenciais de produção: {e}")
+        return None
+
+
+def _projeto_com_credenciais():
+    """Metadados da sessão + senhas carregadas sob demanda do banco."""
+    if "projeto_selecionado" not in session:
+        return None
+    # Remove senhas/usuários DB legados do cookie (sessões antigas)
+    for key in list(session["projeto_selecionado"].keys()):
+        if "senha" in key.lower() or key in ("usuarioProducao", "usuariohomologacao"):
+            session["projeto_selecionado"].pop(key, None)
+            session.modified = True
+    projeto = dict(session["projeto_selecionado"])
+    creds = buscar_credenciais_projeto(projeto.get("ProjetoID"))
+    if creds:
+        projeto.update(creds)
+    return projeto
+
+
 def log_detalhes_conexao(server, database, user, password):
-    """Loga detalhes da conexão (sem expor senha completa)"""
+    """Loga detalhes da conexão sem expor a senha."""
     logger.info("=" * 80)
     logger.info("DIAGNÓSTICO DE CONEXÃO")
     logger.info("=" * 80)
     logger.info(f"Servidor: {server}")
     logger.info(f"Banco: {database}")
     logger.info(f"Usuário: {user}")
-    logger.info(f"Senha (primeiros 4 chars): {password[:4] if password else 'vazia'}...")
-    logger.info(f"Tamanho da senha: {len(password) if password else 0}")
+    logger.info(f"Senha configurada: {'sim' if password else 'não'}")
     logger.info("-" * 80)
 
 def testar_conexao_pyodbc(server, database, user, password):
@@ -75,122 +159,116 @@ def conectar_segunda_base(banco_nome):
     logger.info(f"CHAMADA: conectar_segunda_base('{banco_nome}')")
     logger.info("=" * 80)
     
-    # Verificar se há projeto na sessão
-    if "projeto_selecionado" not in session:
-        logger.warning("⚠️ NENHUM PROJETO NA SESSÃO!")
+    projeto = _projeto_com_credenciais()
+    if not projeto:
+        logger.warning("Nenhum projeto na sessão (ou sem ProjetoID)")
         logger.info(f"Session keys: {list(session.keys())}")
         server = Config.DB2_SERVER
         user = Config.DB2_USER
         password = Config.DB2_PASSWORD
         origem = "DEFAULT (sem projeto na sessão)"
     else:
-        projeto = session["projeto_selecionado"]
-        logger.info(f"📁 Projeto na sessão: {projeto.get('NomeProjeto')}")
-        logger.info(f"📁 DadosGX do projeto: {projeto.get('DadosGX')}")
-        logger.info(f"📁 Banco solicitado: {banco_nome}")
-        
-        # Log de TODOS os campos do projeto para diagnóstico
-        logger.info("📋 CAMPOS DO PROJETO NA SESSÃO:")
-        for key, value in projeto.items():
-            if key.lower().find('senha') >= 0:
-                logger.info(f"  {key}: {'*' * len(str(value)) if value else 'vazio'}")
-            else:
-                logger.info(f"  {key}: {value}")
-        
-        # Verificar se este banco é o DadosGX (banco de homologação)
+        logger.info(f"Projeto: {projeto.get('NomeProjeto')} (id={projeto.get('ProjetoID')})")
+        logger.info(f"DadosGX: {projeto.get('DadosGX')} | banco solicitado: {banco_nome}")
+
         banco_homologacao = projeto.get("DadosGX")
         banco_producao = projeto.get("bancoProducao")
-        
+        banco_homo_wf = projeto.get("BancoHomo")
+
         if banco_nome == banco_homologacao:
-            logger.info("🎯 Banco solicitado é o DadosGX (homologação) deste projeto")
-            
-            # Verificar credenciais de homologação
+            logger.info("Banco solicitado é o DadosGX (homologação) deste projeto")
+
             servidor_homo = projeto.get("servidorhomologacao")
             usuario_homo = projeto.get("usuariohomologacao")
             senha_homo = projeto.get("senhahomologacao")
-            
-            logger.info(f"🔍 Credenciais de homologação:")
-            logger.info(f"   - Servidor: '{servidor_homo}' (tipo: {type(servidor_homo)})")
-            logger.info(f"   - Usuário: '{usuario_homo}' (tipo: {type(usuario_homo)})")
-            logger.info(f"   - Senha configurada: {'SIM' if senha_homo else 'NÃO'}")
-            
-            # Verificar se TODOS os campos estão preenchidos
+
+            logger.info(f"Credenciais homologação — servidor: '{servidor_homo}', usuário: '{usuario_homo}', senha: {'sim' if senha_homo else 'não'}")
+
             campos_preenchidos = all([servidor_homo, usuario_homo, senha_homo])
-            logger.info(f"   - Todos campos preenchidos: {'SIM' if campos_preenchidos else 'NÃO'}")
-            
+
             if campos_preenchidos:
-                # Usar credenciais específicas de homologação do projeto
                 server = servidor_homo
                 user = usuario_homo
                 password = senha_homo
                 origem = "CREDENCIAIS ESPECÍFICAS DO PROJETO (homologação)"
-                logger.info("✅ Usando credenciais específicas do projeto")
             else:
-                # Usar credenciais padrão do .env
                 server = Config.DB2_SERVER
                 user = Config.DB2_USER
                 password = Config.DB2_PASSWORD
                 origem = "DEFAULT (credenciais de homologação incompletas)"
-                logger.warning("⚠️ Usando credenciais padrão - campos de homologação incompletos")
-        
+                logger.warning("Usando credenciais padrão - campos de homologação incompletos")
+
         elif banco_nome == banco_producao:
-            logger.info("🎯 Banco solicitado é o de produção deste projeto")
-            # Verificar credenciais de produção
+            logger.info("Banco solicitado é o de produção deste projeto")
             servidor_prod = projeto.get("servidorproducao")
             usuario_prod = projeto.get("usuarioProducao")
             senha_prod = projeto.get("senhaproducao")
-            
-            logger.info(f"🔍 Credenciais de produção:")
-            logger.info(f"   - Servidor: '{servidor_prod}'")
-            logger.info(f"   - Usuário: '{usuario_prod}'")
-            logger.info(f"   - Senha configurada: {'SIM' if senha_prod else 'NÃO'}")
-            
+
+            logger.info(f"Credenciais produção — servidor: '{servidor_prod}', usuário: '{usuario_prod}', senha: {'sim' if senha_prod else 'não'}")
+
             campos_preenchidos = all([servidor_prod, usuario_prod, senha_prod])
-            logger.info(f"   - Todos campos preenchidos: {'SIM' if campos_preenchidos else 'NÃO'}")
-            
+
             if campos_preenchidos:
-                # Usar credenciais específicas de produção do projeto
                 server = servidor_prod
                 user = usuario_prod
                 password = senha_prod
                 origem = "CREDENCIAIS ESPECÍFICAS DO PROJETO (produção)"
-                logger.info("✅ Usando credenciais específicas do projeto (produção)")
             else:
-                # Usar credenciais padrão do .env
                 server = Config.DB2_SERVER
                 user = Config.DB2_USER
                 password = Config.DB2_PASSWORD
                 origem = "DEFAULT (credenciais de produção incompletas)"
-                logger.warning("⚠️ Usando credenciais padrão - campos de produção incompletos")
-        
+                logger.warning("Usando credenciais padrão - campos de produção incompletos")
+
+        elif banco_homo_wf and banco_nome == banco_homo_wf:
+            logger.info("Banco solicitado é o BancoHomo (homólogo WF) deste projeto")
+            servidor_homo = projeto.get("servidorhomologacao")
+            usuario_homo = projeto.get("usuariohomologacao")
+            senha_homo = projeto.get("senhahomologacao")
+
+            server = Config.DB2_SERVER
+            user = Config.DB2_USER
+            password = Config.DB2_PASSWORD
+            origem = "DEFAULT (BancoHomo no servidor padrão)"
+
+            if not testar_conexao_pyodbc(server, banco_nome, user, password):
+                if all([servidor_homo, usuario_homo, senha_homo]):
+                    logger.warning(
+                        "BancoHomo inacessível no servidor padrão; "
+                        "tentando servidor de homologação do projeto"
+                    )
+                    server = servidor_homo
+                    user = usuario_homo
+                    password = senha_homo
+                    origem = "CREDENCIAIS ESPECÍFICAS DO PROJETO (homologação p/ BancoHomo)"
+                else:
+                    logger.warning("BancoHomo inacessível e credenciais de homologação incompletas")
+
         else:
-            logger.warning(f"⚠️ Banco '{banco_nome}' não identificado como DadosGX ou produção")
+            logger.warning(f"Banco '{banco_nome}' não identificado como DadosGX ou produção")
             server = Config.DB2_SERVER
             user = Config.DB2_USER
             password = Config.DB2_PASSWORD
             origem = "DEFAULT (banco não identificado)"
-    
-    # Logar detalhes da conexão
+
     log_detalhes_conexao(server, banco_nome, user, password)
     logger.info(f"Origem das credenciais: {origem}")
-    
-    # Testar conexão antes de retornar
-    logger.info("🧪 TESTANDO CONEXÃO...")
+
+    logger.info("Testando conexão...")
     teste_ok = testar_conexao_pyodbc(server, banco_nome, user, password)
-    
+
     if not teste_ok:
-        logger.error("❌ TESTE DE CONEXÃO FALHOU!")
+        logger.error("Teste de conexão falhou")
         return None
-    
-    # Se o teste passou, criar a conexão real
+
     try:
         conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={banco_nome};UID={user};PWD={password}"
-        logger.info(f"🔗 Criando conexão real...")
+        logger.info("Criando conexão real...")
         conn = pyodbc.connect(conn_str)
-        logger.info("✅ CONEXÃO ESTABELECIDA COM SUCESSO!")
+        logger.info("Conexão estabelecida com sucesso")
         return conn
     except Exception as e:
-        logger.error(f"❌ Erro ao criar conexão: {e}")
+        logger.error(f"Erro ao criar conexão: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
@@ -201,20 +279,18 @@ def conectar_usuario():
     logger.info("CHAMADA: conectar_usuario()")
     logger.info("=" * 80)
     
-    if "projeto_selecionado" not in session:
-        logger.error("❌ Nenhum projeto selecionado na sessão")
+    projeto = _projeto_com_credenciais()
+    if not projeto:
+        logger.error("Nenhum projeto selecionado na sessão")
         return None
 
-    projeto = session["projeto_selecionado"]
     banco = projeto.get("DadosGX")
-    
+
     if not banco:
-        logger.error("❌ Banco DadosGX não configurado no projeto")
+        logger.error("Banco DadosGX não configurado no projeto")
         return None
-    
-    logger.info(f"📁 Conectar usuário ao banco: {banco}")
-    
-    # Usar a função conectar_segunda_base que já tem toda a lógica
+
+    logger.info(f"Conectar usuário ao banco: {banco}")
     return conectar_segunda_base(banco)
 
 def conectar_homologacao():
@@ -222,21 +298,19 @@ def conectar_homologacao():
     logger.info("=" * 80)
     logger.info("CHAMADA: conectar_homologacao()")
     logger.info("=" * 80)
-    
-    if "projeto_selecionado" not in session:
-        logger.error("❌ Nenhum projeto selecionado na sessão")
+
+    projeto = _projeto_com_credenciais()
+    if not projeto:
+        logger.error("Nenhum projeto selecionado na sessão")
         return None
 
-    projeto = session["projeto_selecionado"]
     banco = projeto.get("DadosGX")
-    
+
     if not banco:
-        logger.error("❌ Banco DadosGX não configurado no projeto")
+        logger.error("Banco DadosGX não configurado no projeto")
         return None
-    
-    logger.info(f"📁 Conectar homologação ao banco: {banco}")
-    
-    # Usar a função conectar_segunda_base que já tem toda a lógica
+
+    logger.info(f"Conectar homologação ao banco: {banco}")
     return conectar_segunda_base(banco)
 
 def conectar_producao():
@@ -244,21 +318,19 @@ def conectar_producao():
     logger.info("=" * 80)
     logger.info("CHAMADA: conectar_producao()")
     logger.info("=" * 80)
-    
-    if "projeto_selecionado" not in session:
-        logger.error("❌ Nenhum projeto selecionado na sessão")
+
+    projeto = _projeto_com_credenciais()
+    if not projeto:
+        logger.error("Nenhum projeto selecionado na sessão")
         return None
 
-    projeto = session["projeto_selecionado"]
     banco = projeto.get("bancoProducao")
-    
+
     if not banco:
-        logger.error("❌ Banco de produção não configurado no projeto")
+        logger.error("Banco de produção não configurado no projeto")
         return None
-    
-    logger.info(f"📁 Conectar produção ao banco: {banco}")
-    
-    # Usar a função conectar_segunda_base que já tem toda a lógica
+
+    logger.info(f"Conectar produção ao banco: {banco}")
     return conectar_segunda_base(banco)
 
 def conectar_banco_por_nome(banco_nome, tipo="homologacao"):
@@ -273,35 +345,34 @@ def conectar_banco_por_nome(banco_nome, tipo="homologacao"):
     logger.info(f"CHAMADA: conectar_banco_por_nome('{banco_nome}', '{tipo}')")
     logger.info("=" * 80)
     
-    if "projeto_selecionado" not in session:
-        logger.warning("⚠️ Nenhum projeto na sessão, usando credenciais padrão")
+    projeto = _projeto_com_credenciais()
+    origem = "DEFAULT (sem projeto na sessão)"
+    if not projeto:
+        logger.warning("Nenhum projeto na sessão, usando credenciais padrão")
         server = Config.DB2_SERVER
         user = Config.DB2_USER
         password = Config.DB2_PASSWORD
     else:
-        projeto = session["projeto_selecionado"]
-        
         if tipo == "producao":
-            # Usar credenciais de produção
-            servidor = projeto.get("servidorproducao", Config.DB2_SERVER)
-            usuario = projeto.get("usuarioProducao", Config.DB2_USER)
-            senha = projeto.get("senhaproducao", Config.DB2_PASSWORD)
+            servidor = projeto.get("servidorproducao") or Config.DB2_SERVER
+            usuario = projeto.get("usuarioProducao") or Config.DB2_USER
+            senha = projeto.get("senhaproducao") or Config.DB2_PASSWORD
             origem = f"PRODUÇÃO do projeto {projeto.get('NomeProjeto')}"
-        else:  # homologacao
-            # Usar credenciais de homologação
-            servidor = projeto.get("servidorhomologacao", Config.DB2_SERVER)
-            usuario = projeto.get("usuariohomologacao", Config.DB2_USER)
-            senha = projeto.get("senhahomologacao", Config.DB2_PASSWORD)
+        else:
+            servidor = projeto.get("servidorhomologacao") or Config.DB2_SERVER
+            usuario = projeto.get("usuariohomologacao") or Config.DB2_USER
+            senha = projeto.get("senhahomologacao") or Config.DB2_PASSWORD
             origem = f"HOMOLOGAÇÃO do projeto {projeto.get('NomeProjeto')}"
-        
+
         server = servidor
         user = usuario
         password = senha
-    
+
     logger.info(f"Origem: {origem}")
     logger.info(f"Servidor: {server}")
     logger.info(f"Usuário: {user}")
-    
+    logger.info(f"Senha configurada: {'sim' if password else 'não'}")
+
     try:
         conn = pyodbc.connect(
             Driver="{ODBC Driver 17 for SQL Server}",
@@ -311,8 +382,8 @@ def conectar_banco_por_nome(banco_nome, tipo="homologacao"):
             PWD=password,
             timeout=Config.DB2_TIMEOUT,
         )
-        logger.info(f"✅ Conexão bem-sucedida com {banco_nome}")
+        logger.info(f"Conexão bem-sucedida com {banco_nome}")
         return conn
     except Exception as e:
-        logger.error(f"❌ Erro ao conectar base {banco_nome} ({tipo}): {e}")
+        logger.error(f"Erro ao conectar base {banco_nome} ({tipo}): {e}")
         return None
