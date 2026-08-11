@@ -76,13 +76,14 @@ def gerenciar_usuarios():
 
         usuarios_list.sort(key=lambda u: (u['UsuarioNome'] or '').lower())
 
-        # Buscar todos os projetos para o formulário
+        # Projetos disponíveis para associação: apenas não concluídos
         cursor.execute("""
             SELECT 
                 ProjetoID,
                 NomeProjeto,
                 DadosGX
-            FROM Projeto 
+            FROM Projeto
+            WHERE ISNULL(Concluido, 0) = 0
             ORDER BY NomeProjeto
         """)
         projetos_raw = cursor.fetchall()
@@ -200,11 +201,31 @@ def salvar_usuario():
                 if desbloquear:
                     desbloquear_conta(cursor, None, usuario_id)
 
-            # Atualizar projetos associados
+            # Atualizar projetos associados (preserva vínculo com projetos já concluídos,
+            # que não aparecem mais na lista de seleção).
+            projetos_manter = []
+            cursor.execute(
+                """
+                SELECT up.ProjetoID
+                FROM UsuarioProjeto up
+                INNER JOIN Projeto p ON p.ProjetoID = up.ProjetoID
+                WHERE up.UsuarioID = ?
+                  AND ISNULL(p.Concluido, 0) = 1
+                """,
+                (usuario_id,),
+            )
+            projetos_manter = [int(row.ProjetoID) for row in cursor.fetchall()]
+
             cursor.execute("DELETE FROM UsuarioProjeto WHERE UsuarioID = ?", (usuario_id,))
 
-            for projeto_id in projetos_selecionados:
-                projeto_id_int = int(projeto_id)
+            projetos_final = set(projetos_manter)
+            for projeto_id in projetos_selecionados or []:
+                try:
+                    projetos_final.add(int(projeto_id))
+                except (TypeError, ValueError):
+                    continue
+
+            for projeto_id_int in projetos_final:
                 cursor.execute(
                     "INSERT INTO UsuarioProjeto (UsuarioID, ProjetoID) VALUES (?, ?)",
                     (usuario_id, projeto_id_int),

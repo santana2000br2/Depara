@@ -1,0 +1,41 @@
+PACOTE PROCEDURES SQL — DADOS GX
+================================
+Gerado em: 10/08/2026 17:23
+
+Conteudo
+--------
+  00_instalar_completo.sql     Instalador mestre (extracao + De/Para) — T-SQL puro
+  01_extracao/                 Procedures de extracao + instalar_todas.sql
+  02_depara/                   Procedures De/Para + instalar_todas.sql
+
+O que NAO entra neste pacote
+----------------------------
+  Scripts alter_* da pasta procedure/_util (sao do banco da aplicacao De/Para,
+  nao do DadosGX): LayoutVersao, Email, Projeto, etc.
+
+Como instalar (SSMS)
+--------------------
+1. Abra o SQL Server Management Studio.
+2. Conecte no servidor onde esta o banco DadosGX do projeto.
+3. Abra 00_instalar_completo.sql
+   (NAO precisa ativar SQLCMD Mode).
+4. Substitua em todo o arquivo:
+     [DadosGX_SeuProjeto]
+   pelo nome real do banco (ex.: DadosGX_ClienteX).
+5. Execute (F5).
+6. Apos criar as procedures, execute UMA vez:
+
+   EXEC dbo.up_Replace_Name_DadosGx_Procedures
+        @BancoDadosGX = 'NomeExatoDoSeuBanco';
+
+   Isso troca o nome template interno pelo banco real.
+
+Parametros das procedures
+-------------------------
+  @BancoDadosGX  Nome do banco DadosGX
+  @BancoWF       Nome do banco Workflow (quando exigido)
+
+Contagem
+--------
+  Extração: 22 procedure(s)
+  De/Para : 32 procedure(s)
