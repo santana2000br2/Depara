@@ -120,19 +120,19 @@
                                 <i class="fas fa-info-circle" style="color: {% if modo_validador %}#0d9488{% else %}#007bff{% endif %};"></i>
                                 Informações do arquivo
                             </span>
-                            <span class="result-panel-summary">CSV, TXT · separador § · Latin-1</span>
+                            <span class="result-panel-summary">CSV, TXT · separador § · UTF-8 / ANSI</span>
                             <i class="fas fa-chevron-down result-panel-icon"></i>
                         </button>
                         <div class="result-panel-content info-content">
                             <div><strong>Formatos suportados:</strong> CSV, TXT</div>
                             <div><strong>Separador:</strong> § (pipeline) ou ? (legado)</div>
-                            <div><strong>Encoding:</strong> Latin-1</div>
+                            <div><strong>Encoding:</strong> UTF-8 (preferencial) ou ANSI / Windows-1252 / Latin-1</div>
                             <div><strong>Última coluna:</strong> se estiver vazia, pode omitir o § final — será preenchida automaticamente</div>
-                            <div><strong>Erros bloqueantes:</strong> falta de Nome (campo 2), CPF/CNPJ (campo 4) ou coluna(s) no arquivo (exceto só a última)</div>
+                            <div><strong>Erros de validação:</strong> geram relatório e pedem confirmação antes de importar; linhas problemáticas tendem a Flag=0</div>
                             {% if modo_validador %}
                             <div><strong>Modo:</strong> apenas validação de estrutura — não importa para o banco</div>
                             {% else %}
-                            <div><strong>Importação:</strong> sem erros bloqueantes, valida e importa automaticamente (Pessoa_MG + De/Para)</div>
+                            <div><strong>Importação:</strong> sem erros, importa automaticamente; com erros, avisa e só importa após confirmação</div>
                             {% endif %}
                             <div><strong>Datas:</strong> remove letras e textos (NT, N/A, S/N, NULL, etc.); converte formatos válidos; inválidas ficam vazias</div>
                             <div><strong>E-mail inválido:</strong> gera aviso e campo vazio — não impede a importação</div>
@@ -282,8 +282,10 @@
                     <span class="result-panel-summary">
                         {% if importacao_ultimo_resultado and importacao_ultimo_resultado.sucesso %}
                         Concluída em {{ importacao_ultimo_resultado.banco_gx|default(importacao_base.banco_gx) }}.dbo.{{ importacao_ultimo_resultado.tabela_destino|default(importacao_base.tabela_destino) }}
-                        {% elif total_erros > 0 %}
-                        Bloqueada por erros
+                        {% elif importacao_ultimo_resultado %}
+                        Falha na importação
+                        {% elif aguardando_confirmacao_importacao %}
+                        Aguardando confirmação ({{ total_erros }} erro(s))
                         {% elif importacao_base.pode %}
                         {{ importacao_base.banco_gx }}.dbo.{{ importacao_base.tabela_destino }}
                         {% if importacao_base.procedure %} ({{ importacao_base.procedure }}){% endif %}
@@ -328,11 +330,29 @@
                             <strong>Falha na importação:</strong>
                             {{ importacao_ultimo_resultado.mensagem }}
                             {% endif %}
+                            {% if total_erros > 0 and importacao_ultimo_resultado.sucesso %}
+                            <div style="margin-top:10px;font-size:0.9rem;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Houve {{ total_erros }} erro(s) de validação — consulte o relatório; rejeitados constam como Flag=0.
+                            </div>
+                            {% endif %}
                         </div>
-                        {% elif total_erros > 0 %}
+                        {% elif aguardando_confirmacao_importacao %}
                         <div class="alert alert-warning import-base-alert">
                             <i class="fas fa-exclamation-triangle"></i>
-                            Corrija os erros bloqueantes e envie o arquivo novamente.
+                            Foram encontrados <strong>{{ total_erros }}</strong> erro(s) de validação.
+                            A importação só continua se você confirmar.
+                            <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;">
+                                <button type="button" class="btn-export btn-export-error" id="btn-reabrir-confirmacao-erros">
+                                    <i class="fas fa-clipboard-check"></i> Revisar e confirmar
+                                </button>
+                                {% if total_erros > 0 or total_avisos|default(0) > 0 %}
+                                <button type="button" class="btn-export" id="btn-ver-erros-antes-confirmar"
+                                        onclick="document.getElementById('btn-abrir-detalhes')?.click()">
+                                    <i class="fas fa-list-alt"></i> Ver relatório de erros
+                                </button>
+                                {% endif %}
+                            </div>
                         </div>
                         {% elif not importacao_base.pode %}
                         <div class="alert alert-warning import-base-alert">
@@ -344,6 +364,75 @@
                 </div>
             </div>
             {% endif %}
+
+        <!-- Modal: Confirmar importação com erros -->
+        {% if aguardando_confirmacao_importacao and process_id %}
+        <div class="import-modal-overlay" id="modal-confirma-erros" role="dialog" aria-labelledby="modal-confirma-erros-titulo" aria-modal="true">
+            <div class="import-modal import-modal--confirma-erros">
+                <div class="import-modal-header">
+                    <h3 id="modal-confirma-erros-titulo"><i class="fas fa-exclamation-triangle" style="color:#b45309;"></i> Confirmar importação</h3>
+                    <button type="button" class="import-modal-close" id="modal-confirma-erros-fechar" aria-label="Fechar">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="import-modal-body">
+                    <p style="margin:0 0 12px;line-height:1.45;">
+                        Foram encontrados <strong>{{ total_erros }}</strong> erro(s) de validação neste arquivo.
+                        Se continuar, o arquivo será importado e as linhas problemáticas tendem a ficar com
+                        <strong>Flag = 0</strong> (rejeitados), com relatório de erros disponível.
+                    </p>
+                    {% if amostra_erros_confirmacao %}
+                    <div class="import-modal-table-wrap" style="max-height:220px;">
+                        <table class="compact-table import-modal-table">
+                            <thead>
+                                <tr>
+                                    <th>Linha</th>
+                                    <th>Coluna</th>
+                                    <th>Erro</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for err in amostra_erros_confirmacao %}
+                                <tr class="erros-row">
+                                    <td>{{ err.Linha }}</td>
+                                    <td>{{ err.Coluna }}</td>
+                                    <td>{{ err.Erro }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if total_erros > amostra_erros_confirmacao|length %}
+                    <p style="margin:8px 0 0;font-size:0.9rem;color:#64748b;">
+                        Exibindo {{ amostra_erros_confirmacao|length }} de {{ total_erros }}.
+                        Use “Ver relatório de erros” para o detalhe completo.
+                    </p>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                <div class="import-modal-footer" style="justify-content:flex-end;gap:10px;flex-wrap:wrap;">
+                    <button type="button" class="btn-export" id="modal-confirma-erros-cancelar">
+                        Cancelar
+                    </button>
+                    {% if total_erros > 0 %}
+                    <button type="button" class="btn-export btn-export-error" id="modal-confirma-ver-erros"
+                            onclick="document.getElementById('btn-abrir-detalhes')?.click()">
+                        <i class="fas fa-list-alt"></i> Ver relatório
+                    </button>
+                    {% endif %}
+                    <form method="post"
+                          action="{{ url_for(bp ~ '.confirmar_importacao', process_id=process_id) }}"
+                          id="form-confirma-importacao"
+                          style="margin:0;">
+                        <button type="submit" class="btn-export btn-export-success" id="btn-confirma-importar-erros"
+                                formnovalidate>
+                            <i class="fas fa-database"></i> Importar mesmo assim
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Modal: Erros e Avisos -->
         <div class="import-modal-overlay" id="modal-detalhes" hidden>
@@ -1487,6 +1576,16 @@ button.btn-export {
     max-height: 90vh;
 }
 
+.import-modal--confirma-erros {
+    width: min(92vw, 640px);
+}
+
+#btn-confirma-importar-erros.processing,
+#btn-confirma-importar-erros:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
 .import-modal--layout-view .import-modal-body {
     overflow: auto;
     padding: 12px 16px 8px;
@@ -2094,6 +2193,45 @@ document.addEventListener('DOMContentLoaded', function() {
     
     {% if process_id %}
     document.querySelector('.results-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    {% endif %}
+
+    {% if aguardando_confirmacao_importacao and process_id %}
+    (function() {
+        const modal = document.getElementById('modal-confirma-erros');
+        if (!modal) return;
+        const fechar = document.getElementById('modal-confirma-erros-fechar');
+        const cancelar = document.getElementById('modal-confirma-erros-cancelar');
+        const reabrir = document.getElementById('btn-reabrir-confirmacao-erros');
+        const form = document.getElementById('form-confirma-importacao');
+        const btnSubmit = document.getElementById('btn-confirma-importar-erros');
+
+        function abrirConfirmacao() {
+            modal.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+        function fecharConfirmacao() {
+            modal.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        abrirConfirmacao();
+        fechar?.addEventListener('click', fecharConfirmacao);
+        cancelar?.addEventListener('click', fecharConfirmacao);
+        reabrir?.addEventListener('click', abrirConfirmacao);
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) fecharConfirmacao();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !modal.hidden) fecharConfirmacao();
+        });
+        form?.addEventListener('submit', function() {
+            if (btnSubmit) {
+                btnSubmit.disabled = true;
+                btnSubmit.classList.add('processing');
+                btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importando...';
+            }
+        });
+    })();
     {% endif %}
 });
 </script>

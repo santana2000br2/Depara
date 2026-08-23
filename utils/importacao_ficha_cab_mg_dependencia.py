@@ -177,10 +177,11 @@ def validar_dataframe_depende_ficha_cab_mg(cursor, df, layout_nome=None, layout_
         linhas, [{'Descricao': 'CHASSI', 'Posicao': 1}], chassis, ficha_cab_existe=existe,
     )
     if erros:
-        raise RuntimeError(
-            f"Dependência Ficha_Cab_MG: {len(erros)} linha(s) com CHASSI não cadastrado. "
-            f"Ex.: {erros[0]['Erro']}"
+        logger.warning(
+            "Dependência Ficha_Cab_MG: %s linha(s) com CHASSI não cadastrado (ex.: %s) — importação segue (Flag=0)",
+            len(erros), erros[0]['Erro'],
         )
+        return
 
     logger.info("Dependência Ficha_Cab_MG: todos os CHASSI encontrados em %s", TABELA_FICHA_CAB_MG)
 
@@ -210,9 +211,11 @@ def validar_staging_depende_ficha_cab_mg(cursor, tabela_staging):
             faltantes += 1
 
     if faltantes:
-        raise RuntimeError(
-            f"{faltantes} registro(s) em {tabela_staging} com CHASSI ausente em {TABELA_FICHA_CAB_MG}. "
-            "Importe o layout 13 Fseg_Cab antes deste layout."
+        # Não aborta a carga: linhas órfãs seguem e tendem a Flag=0 / Ocorrencia.
+        logger.warning(
+            "%s registro(s) em %s com CHASSI ausente em %s — importação segue (Flag=0)",
+            faltantes, tabela_staging, TABELA_FICHA_CAB_MG,
         )
+        return
 
     logger.info("Staging %s validada contra %s", tabela_staging, TABELA_FICHA_CAB_MG)

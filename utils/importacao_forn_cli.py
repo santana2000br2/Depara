@@ -41,14 +41,14 @@ FORN_CLI_COLUNAS_CHAVE = frozenset({
 
 
 def _normalizar_nome_layout(texto):
-    """Ex.: '1 Forn_cli.txt' → 'forn_cli'; '2 Forn_cli Endereco' → 'forn_cli_endereco'."""
+    """Ex.: '1 Forn_cli.txt' / '3-Forn_cli_Documento.txt' → 'forn_cli' / 'forn_cli_documento'."""
     if not texto:
         return ''
     nome = str(texto).strip().lower()
-    nome = re.sub(r'^\d+\s*', '', nome)
     nome = re.sub(r'\.txt$', '', nome)
-    nome = re.sub(r'\s+', '_', nome)
-    return nome.strip()
+    nome = re.sub(r'^\d+[\s._\-]*', '', nome)
+    nome = re.sub(r'[\s\-]+', '_', nome)
+    return nome.strip('_')
 
 
 def layout_eh_forn_cli(nome_layout, descricao=None, colunas=None):
@@ -61,9 +61,7 @@ def layout_eh_forn_cli(nome_layout, descricao=None, colunas=None):
         nome = _normalizar_nome_layout(texto)
         if not nome:
             continue
-        if nome in FORN_CLI_SUB_LAYOUTS or any(
-            nome.startswith(f'{sub}_') or nome == sub for sub in FORN_CLI_SUB_LAYOUTS
-        ):
+        if nome in FORN_CLI_SUB_LAYOUTS or any(sub in nome for sub in FORN_CLI_SUB_LAYOUTS):
             continue
         if nome == 'forn_cli':
             return True
@@ -108,8 +106,61 @@ def _quote_col(nome):
     return f"[{col.replace(']', ']]')}]"
 
 
+def _celula_para_sql(val):
+    """Converte célula do DataFrame em string SQL. Nunca serializa Series do pandas."""
+    if isinstance(val, pd.Series):
+        for item in val.tolist():
+            convertido = _celula_para_sql(item)
+            if convertido is not None:
+                return convertido
+        return None
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (ValueError, TypeError):
+        pass
+    texto = str(val).strip()
+    if not texto or texto.lower() in ('nan', 'none', '<na>', 'nat'):
+        return None
+    if 'dtype:' in texto and 'Name:' in texto:
+        return None
+    return texto
+
+
+def _deduplicar_colunas_dataframe(df):
+    """Se o layout repetir o mesmo nome, combina as colunas (primeiro valor preenchido)."""
+    if df is None or df.empty:
+        return df
+    nomes = [str(c).strip() for c in df.columns]
+    chaves = [n.upper() for n in nomes]
+    if len(chaves) == len(set(chaves)):
+        df = df.copy()
+        df.columns = nomes
+        return df
+
+    logger.warning(
+        "DataFrame com colunas duplicadas (%s) — consolidando para não gravar 'dtype: object'",
+        ', '.join(n for i, n in enumerate(nomes) if chaves[i] in chaves[:i]),
+    )
+    agrupado = {}
+    for i, nome in enumerate(nomes):
+        chave = nome.upper()
+        serie = df.iloc[:, i]
+        if chave not in agrupado:
+            agrupado[chave] = (nome, serie.copy())
+            continue
+        base_nome, base = agrupado[chave]
+        vazia = base.map(lambda x: _celula_para_sql(x) is None)
+        base = base.copy()
+        base.loc[vazia] = serie.loc[vazia]
+        agrupado[chave] = (base_nome, base)
+    return pd.DataFrame({nome: serie for nome, serie in agrupado.values()})
+
+
 def _normalizar_colunas_dataframe(df):
-    df = df.copy()
+    df = _deduplicar_colunas_dataframe(df.copy())
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
@@ -174,70 +225,207 @@ def _listar_colunas(cursor, tabela):
 
 
 def _executar(cursor, sql, params=None):
+    """Executa SQL. Não consome o result set — SELECT + fetchall() usa esta função."""
     if params:
         cursor.execute(sql, params)
     else:
         cursor.execute(sql)
 
 
+def _executar_procedure(cursor, sql, params=None):
+    """EXEC de procedure: drena PRINT/result sets extras do pyodbc."""
+    _executar(cursor, sql, params)
+    try:
+        while cursor.nextset():
+            pass
+    except Exception:
+        pass
+
+
+# Colunas de sistema do staging: não vêm do arquivo (SQL Server é case-insensitive).
+_COLUNAS_SISTEMA_STAGING = frozenset({'IDTABELA', 'FLAG', 'OCORRENCIA'})
+
+
+def _eh_coluna_sistema_staging(nome):
+    return str(nome or '').strip().upper() in _COLUNAS_SISTEMA_STAGING
+
+
+def _colunas_layout_para_staging(colunas):
+    """Remove IDTABELA/Flag/Ocorrencia do layout — o staging usa IDENTITY IDtabela do sistema."""
+    vistos = set()
+    saida = []
+    if colunas is None:
+        return saida
+    for col in list(colunas):
+        nome = str(col).strip()
+        if not nome or _eh_coluna_sistema_staging(nome):
+            continue
+        chave = nome.upper()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append(nome)
+    return saida
+
+
+def _staging_tem_colunas_not_null(cursor, tabela_staging):
+    """True se alguma coluna de dados (exceto IDtabela IDENTITY) for NOT NULL."""
+    cursor.execute(
+        """
+        SELECT c.name, c.is_nullable, c.is_identity
+        FROM sys.columns c
+        INNER JOIN sys.objects o ON c.object_id = o.object_id
+        WHERE o.name = ? AND o.type = 'U'
+        """,
+        (tabela_staging,),
+    )
+    for nome, is_nullable, is_identity in cursor.fetchall():
+        chave = str(nome or '').strip().upper()
+        if chave == 'IDTABELA':
+            # Legado: idTabela NOT NULL sem IDENTITY → INSERT sem a coluna falha (515).
+            if int(is_identity or 0) == 0:
+                return True
+            continue
+        if int(is_nullable or 0) == 0:
+            return True
+    return False
+
+
 def garantir_tabela_staging(cursor, banco_gx, colunas_df, tabela_staging=None):
-    """Garante tabela de staging com colunas do layout + IDtabela + Flag."""
+    """Garante tabela de staging com colunas do layout + IDtabela + Flag.
+
+    Recria a staging se existir com colunas de dados NOT NULL (legado) —
+    evita erro 515 (Cannot insert the value NULL into column ...).
+
+    A conexão pyodbc já aponta para o banco DadosGX: cria/altera em dbo.
+    (Evita inconsistência de CREATE com nome de banco em 3 partes.)
+    """
     tabela_staging = tabela_staging or TABELA_STAGING
-    db = _quote_db(banco_gx)
+    if not tabela_staging:
+        raise ValueError("Nome da tabela de staging não informado.")
     tbl = _quote_table(tabela_staging)
+    colunas_layout = _colunas_layout_para_staging(colunas_df)
+
+    if _tabela_existe(cursor, tabela_staging):
+        existentes = {c.strip().upper(): c.strip() for c in _listar_colunas(cursor, tabela_staging)}
+        precisa_recriar = False
+        if _staging_tem_colunas_not_null(cursor, tabela_staging):
+            precisa_recriar = True
+            logger.warning(
+                "Staging %s em %s tem colunas NOT NULL ou idTabela sem IDENTITY — "
+                "será recriada (colunas NULL + IDtabela IDENTITY)",
+                tabela_staging, banco_gx,
+            )
+        elif 'IDTABELA' not in existentes:
+            precisa_recriar = True
+            logger.warning(
+                "Staging %s em %s sem IDtabela — será recriada",
+                tabela_staging, banco_gx,
+            )
+        if precisa_recriar:
+            _executar(cursor, f"DROP TABLE dbo.{tbl}")
+            logger.info("Tabela staging %s removida para recriação em %s", tabela_staging, banco_gx)
+        else:
+            extras = [
+                nome for chave, nome in existentes.items()
+                if chave not in {c.upper() for c in colunas_layout}
+                and chave not in ('IDTABELA', 'FLAG', 'OCORRENCIA')
+            ]
+            if extras:
+                precisa_recriar = True
+                logger.warning(
+                    "Staging %s tem colunas extras (%s) — será recriada só com o layout",
+                    tabela_staging, ', '.join(extras[:12]),
+                )
+                _executar(cursor, f"DROP TABLE dbo.{tbl}")
+                logger.info("Tabela staging %s removida para recriação em %s", tabela_staging, banco_gx)
+
 
     if not _tabela_existe(cursor, tabela_staging):
-        cols_ddl = []
-        for col in colunas_df:
-            cols_ddl.append(f"{_quote_col(col)} VARCHAR(MAX) NULL")
+        if not colunas_layout:
+            raise ValueError(
+                f"Não há colunas de layout para criar a staging {tabela_staging}."
+            )
+        cols_ddl = [f"{_quote_col(col)} VARCHAR(MAX) NULL" for col in colunas_layout]
         cols_ddl.append("[IDtabela] INT IDENTITY(1,1) NOT NULL")
         cols_ddl.append("[Flag] SMALLINT NULL")
-        ddl = f"CREATE TABLE {db}.dbo.{tbl} ({', '.join(cols_ddl)})"
+        ddl = f"CREATE TABLE dbo.{tbl} ({', '.join(cols_ddl)})"
         _executar(cursor, ddl)
-        logger.info("Tabela %s criada em %s", tabela_staging, banco_gx)
-        return
+        logger.info("Tabela %s criada em %s (dbo)", tabela_staging, banco_gx)
 
-    existentes = {c.strip() for c in _listar_colunas(cursor, tabela_staging)}
-    for col in colunas_df:
-        col_strip = col.strip()
-        if col_strip not in existentes:
+    if not _tabela_existe(cursor, tabela_staging):
+        raise RuntimeError(
+            f"Falha ao criar a tabela de staging dbo.{tabela_staging} em {banco_gx}."
+        )
+
+    existentes = {c.strip().upper(): c.strip() for c in _listar_colunas(cursor, tabela_staging)}
+    for col in colunas_layout:
+        if col.upper() not in existentes:
             _executar(
                 cursor,
-                f"ALTER TABLE {db}.dbo.{tbl} ADD {_quote_col(col_strip)} VARCHAR(MAX) NULL",
+                f"ALTER TABLE dbo.{tbl} ADD {_quote_col(col)} VARCHAR(MAX) NULL",
             )
-    if 'IDtabela' not in existentes:
+            existentes[col.upper()] = col
+    if 'IDTABELA' not in existentes:
         _executar(
             cursor,
-            f"ALTER TABLE {db}.dbo.{tbl} ADD [IDtabela] INT IDENTITY(1,1) NOT NULL",
+            f"ALTER TABLE dbo.{tbl} ADD [IDtabela] INT IDENTITY(1,1) NOT NULL",
         )
-    if 'Flag' not in existentes:
-        _executar(cursor, f"ALTER TABLE {db}.dbo.{tbl} ADD [Flag] SMALLINT NULL")
+    if 'FLAG' not in existentes:
+        _executar(cursor, f"ALTER TABLE dbo.{tbl} ADD [Flag] SMALLINT NULL")
 
 
 def inserir_staging(cursor, banco_gx, df, tabela_staging=None):
     """Trunca staging e insere dados validados em lote."""
     tabela_staging = tabela_staging or TABELA_STAGING
-    db = _quote_db(banco_gx)
+    if not tabela_staging:
+        raise ValueError("Nome da tabela de staging não informado.")
     tbl = _quote_table(tabela_staging)
-    colunas = [c.strip() for c in df.columns if c.strip() not in ('IDtabela', 'Flag')]
-    if not colunas:
+    colunas_df = _colunas_layout_para_staging(df.columns)
+    if not colunas_df:
         raise ValueError("Nenhuma coluna para importar.")
 
-    _executar(cursor, f"TRUNCATE TABLE {db}.dbo.{tbl}")
+    if not _tabela_existe(cursor, tabela_staging):
+        # Segurança: cria na hora se alguém chamou inserir sem garantir.
+        garantir_tabela_staging(cursor, banco_gx, colunas_df, tabela_staging)
 
-    cols_sql = ', '.join(_quote_col(c) for c in colunas)
-    placeholders = ', '.join(['?'] * len(colunas))
-    sql = f"INSERT INTO {db}.dbo.{tbl} ({cols_sql}) VALUES ({placeholders})"
+    if not _tabela_existe(cursor, tabela_staging):
+        raise RuntimeError(
+            f"Tabela de staging dbo.{tabela_staging} não existe em {banco_gx}. "
+            "Não foi possível criar antes da carga."
+        )
 
+    # Mapeia nomes do DataFrame → nome físico na staging (SQL Server case-insensitive).
+    mapa_fisico = {c.strip().upper(): c.strip() for c in _listar_colunas(cursor, tabela_staging)}
+    col_pos = []
+    vistos = set()
+    for i, col in enumerate(df.columns):
+        nome = str(col).strip()
+        if not nome or _eh_coluna_sistema_staging(nome):
+            continue
+        chave = nome.upper()
+        if chave in vistos:
+            continue
+        fisico = mapa_fisico.get(chave)
+        if not fisico:
+            continue
+        vistos.add(chave)
+        col_pos.append((i, fisico))
+    if not col_pos:
+        raise ValueError(
+            f"Nenhuma coluna do arquivo corresponde à staging {tabela_staging}."
+        )
+
+    _executar(cursor, f"TRUNCATE TABLE dbo.{tbl}")
+
+    cols_sql = ', '.join(_quote_col(fisico) for _, fisico in col_pos)
+    placeholders = ', '.join(['?'] * len(col_pos))
+    sql = f"INSERT INTO dbo.{tbl} ({cols_sql}) VALUES ({placeholders})"
+
+    matriz = df.to_numpy()
     registros = []
-    for _, row in df.iterrows():
-        valores = []
-        for col in colunas:
-            val = row[col]
-            if pd.isna(val) or val is None:
-                valores.append(None)
-            else:
-                valores.append(str(val).strip() if str(val).strip() != '' else None)
+    for linha in matriz:
+        valores = [_celula_para_sql(linha[i]) for i, _ in col_pos]
         registros.append(tuple(valores))
 
     if hasattr(cursor, 'fast_executemany'):
@@ -287,14 +475,66 @@ def criar_ou_recarregar_pessoa_mg(cursor, banco_gx):
 def garantir_colunas_extra(cursor, banco_gx, tabela_destino=None, colunas_extra=None):
     tabela_destino = tabela_destino or TABELA_DESTINO
     colunas_extra = colunas_extra or COLUNAS_EXTRA_PESSOA_MG
-    db = _quote_db(banco_gx)
     dest = _quote_table(tabela_destino)
     for coluna, tipo in colunas_extra:
         if not _coluna_existe(cursor, tabela_destino, coluna):
             _executar(
                 cursor,
-                f"ALTER TABLE {db}.dbo.{dest} ADD {_quote_col(coluna)} {tipo}",
+                f"ALTER TABLE dbo.{dest} ADD {_quote_col(coluna)} {tipo}",
             )
+            logger.info("Coluna %s.%s criada (%s)", tabela_destino, coluna, tipo)
+
+
+def popular_pessoa_docidentificador(cursor, tabela_destino):
+    """Cria e preenche Pessoa_DocIdentificador a partir do CPF_CNPJ (script original up_01..up_08)."""
+    if not _tabela_existe(cursor, tabela_destino):
+        return
+    if not _coluna_existe(cursor, tabela_destino, 'CPF_CNPJ'):
+        return
+    if not _coluna_existe(cursor, tabela_destino, 'Pessoa_DocIdentificador'):
+        _executar(
+            cursor,
+            f"ALTER TABLE dbo.{_quote_table(tabela_destino)} "
+            f"ADD [Pessoa_DocIdentificador] varchar(20) NULL",
+        )
+        logger.info("Coluna %s.Pessoa_DocIdentificador criada", tabela_destino)
+
+    cpf = "CONVERT(VARCHAR(20), a.[CPF_CNPJ])"
+    where_flag = ""
+    if _coluna_existe(cursor, tabela_destino, 'Flag'):
+        where_flag = "WHERE a.[Flag] = 1"
+    _executar(cursor, f"""
+        UPDATE a
+        SET a.[Pessoa_DocIdentificador] = CASE
+                WHEN LEN(RTRIM(LTRIM({cpf}))) < 11
+                    THEN REPLICATE('0', 11 - LEN(RTRIM(LTRIM({cpf})))) + RTRIM(LTRIM({cpf}))
+                WHEN LEN(RTRIM(LTRIM({cpf}))) > 11 AND LEN(RTRIM(LTRIM({cpf}))) < 14
+                    THEN REPLICATE('0', 14 - LEN(RTRIM(LTRIM({cpf})))) + RTRIM(LTRIM({cpf}))
+                ELSE RTRIM(LTRIM({cpf}))
+            END
+        FROM dbo.{_quote_table(tabela_destino)} a
+        {where_flag}
+    """)
+    logger.info("Pessoa_DocIdentificador atualizado em %s", tabela_destino)
+
+
+def garantir_pessoa_em_producao(cursor):
+    """up_02+ fazem JOIN em Pessoa_EmProducao; se a tabela não existe a procedure aborta."""
+    if _tabela_existe(cursor, 'Pessoa_EmProducao'):
+        return
+    if _tabela_existe(cursor, TABELA_DESTINO):
+        _executar(
+            cursor,
+            f"SELECT TOP 0 * INTO dbo.[Pessoa_EmProducao] FROM dbo.[{TABELA_DESTINO}]",
+        )
+    else:
+        _executar(
+            cursor,
+            "CREATE TABLE dbo.[Pessoa_EmProducao] ("
+            "[CPF_CNPJ] varchar(20) NULL, "
+            "[Pessoa_DocIdentificador] varchar(20) NULL)",
+        )
+    logger.warning("Tabela Pessoa_EmProducao não existia — criada vazia para a extração")
 
 
 def _normalizar_campos_flag_1(cursor, gx, dest, refs):
@@ -324,7 +564,7 @@ def _normalizar_campos_flag_1(cursor, gx, dest, refs):
             UPDATE a
             SET a.LIM_CREDITO = CASE
                     WHEN ISNUMERIC(a.LIM_CREDITO) = 0 THEN 0
-                    ELSE TRY_CONVERT(FLOAT, REPLACE(a.LIM_CREDITO, ',', '.'))
+                    ELSE TRY_CONVERT(FLOAT, REPLACE(CONVERT(VARCHAR(50), a.LIM_CREDITO), ',', '.'))
                 END
             FROM {gx}.dbo.{dest} a
             {where_flag}
@@ -458,11 +698,11 @@ def executar_pipeline_pos_carga(cursor, banco_gx, banco_wf):
         _executar(cursor, f"""
             UPDATE a
             SET {doc} = CASE
-                    WHEN LEN(RTRIM(LTRIM({cpf}))) < 11
-                        THEN REPLICATE('0', 11 - LEN(RTRIM(LTRIM({cpf})))) + RTRIM(LTRIM({cpf}))
-                    WHEN LEN(RTRIM(LTRIM({cpf}))) > 11 AND LEN(RTRIM(LTRIM({cpf}))) < 14
-                        THEN REPLICATE('0', 14 - LEN(RTRIM(LTRIM({cpf})))) + RTRIM(LTRIM({cpf}))
-                    ELSE RTRIM(LTRIM({cpf}))
+                    WHEN LEN(RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf})))) < 11
+                        THEN REPLICATE('0', 11 - LEN(RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf}))))) + RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf})))
+                    WHEN LEN(RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf})))) > 11 AND LEN(RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf})))) < 14
+                        THEN REPLICATE('0', 14 - LEN(RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf}))))) + RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf})))
+                    ELSE RTRIM(LTRIM(CONVERT(VARCHAR(20), {cpf})))
                 END
             FROM {gx}.dbo.{dest} a
             {where_flag}
@@ -480,6 +720,35 @@ def executar_pipeline_pos_carga(cursor, banco_gx, banco_wf):
             FROM {gx}.dbo.{dest} a
             {where_flag}
               AND {tipo} NOT IN ('F', 'J', 'C', 'M', 'T', 'S', 'G', 'E')
+        """)
+
+    if (
+        _coluna_existe(cursor, TABELA_DESTINO, 'Pessoa_BloqueiaVendaTituloAtraso')
+        and _coluna_existe(cursor, TABELA_DESTINO, 'BLOQUEIA_VENDA')
+    ):
+        bloqueia_oficina = _coluna_existe(cursor, TABELA_DESTINO, 'BLOQUEIA_OFICINA')
+        set_oficina = ""
+        if bloqueia_oficina and _coluna_existe(cursor, TABELA_DESTINO, 'Pessoa_BloqueiaEntradaOficina'):
+            set_oficina = """,
+                a.Pessoa_BloqueiaEntradaOficina = CASE
+                    WHEN UPPER(RTRIM(LTRIM(CONVERT(VARCHAR(20), a.BLOQUEIA_OFICINA)))) IN ('N', '0') THEN 0
+                    WHEN UPPER(RTRIM(LTRIM(CONVERT(VARCHAR(20), a.BLOQUEIA_OFICINA)))) IN ('S', '1') THEN 1
+                    WHEN ISNUMERIC(CONVERT(VARCHAR(20), a.BLOQUEIA_OFICINA)) = 1
+                        THEN CONVERT(SMALLINT, a.BLOQUEIA_OFICINA)
+                    ELSE 0
+                END"""
+        _executar(cursor, f"""
+            UPDATE a
+            SET a.Pessoa_BloqueiaVendaTituloAtraso = CASE
+                    WHEN UPPER(RTRIM(LTRIM(CONVERT(VARCHAR(20), a.BLOQUEIA_VENDA)))) IN ('N', '0') THEN 0
+                    WHEN UPPER(RTRIM(LTRIM(CONVERT(VARCHAR(20), a.BLOQUEIA_VENDA)))) IN ('S', '1') THEN 1
+                    WHEN ISNUMERIC(CONVERT(VARCHAR(20), a.BLOQUEIA_VENDA)) = 1
+                        THEN CONVERT(SMALLINT, a.BLOQUEIA_VENDA)
+                    ELSE 0
+                END
+                {set_oficina}
+            FROM {gx}.dbo.{dest} a
+            {where_flag}
         """)
 
     _normalizar_campos_flag_1(cursor, gx, dest, refs)
@@ -560,18 +829,13 @@ def executar_pipeline_pos_carga(cursor, banco_gx, banco_wf):
               AND ({doc} IS NULL OR {doc} = '')
         """)
 
-    if _coluna_existe(cursor, TABELA_DESTINO, 'BLOQUEIA_VENDA'):
+    if _coluna_existe(cursor, TABELA_DESTINO, 'DT_ANIVER'):
         _executar(cursor, f"""
             UPDATE a
-            SET a.Pessoa_BloqueiaVendaTituloAtraso = CASE
-                    WHEN RTRIM(LTRIM(a.BLOQUEIA_VENDA)) = 'N' THEN 0
-                    WHEN RTRIM(LTRIM(a.BLOQUEIA_VENDA)) = 'S' THEN 1
-                    ELSE ISNULL(a.BLOQUEIA_VENDA, 0)
-                END,
-                a.Pessoa_BloqueiaEntradaOficina = CASE
-                    WHEN RTRIM(LTRIM(a.BLOQUEIA_OFICINA)) = 'N' THEN 0
-                    WHEN RTRIM(LTRIM(a.BLOQUEIA_OFICINA)) = 'S' THEN 1
-                    ELSE ISNULL(a.BLOQUEIA_OFICINA, 0)
+            SET a.DT_ANIVER = CASE
+                    WHEN ISDATE(REPLACE(CONVERT(VARCHAR(30), a.DT_ANIVER, 121), '/', '-')) = 0
+                        THEN '1900-01-01'
+                    ELSE REPLACE(CONVERT(VARCHAR(30), a.DT_ANIVER, 121), '/', '-')
                 END
             FROM {gx}.dbo.{dest} a
             {where_flag}
@@ -581,9 +845,11 @@ def executar_pipeline_pos_carga(cursor, banco_gx, banco_wf):
         _executar(cursor, f"""
             UPDATE a
             SET a.DATA_CADASTRO = CASE
-                    WHEN ISDATE(REPLACE(a.DATA_CADASTRO, '/', '-')) = 0 THEN '1900-01-01'
-                    WHEN (DATA_CADASTRO IS NULL OR DATA_CADASTRO = '') THEN CAST(GETDATE() AS date)
-                    ELSE REPLACE(a.DATA_CADASTRO, '/', '-')
+                    WHEN a.DATA_CADASTRO IS NULL OR CONVERT(VARCHAR(30), a.DATA_CADASTRO, 121) = ''
+                        THEN CAST(GETDATE() AS date)
+                    WHEN ISDATE(REPLACE(CONVERT(VARCHAR(30), a.DATA_CADASTRO, 121), '/', '-')) = 0
+                        THEN '1900-01-01'
+                    ELSE REPLACE(CONVERT(VARCHAR(30), a.DATA_CADASTRO, 121), '/', '-')
                 END
             FROM {gx}.dbo.{dest} a
             {where_flag}
@@ -760,6 +1026,8 @@ def importar_forn_cli_para_base(df, banco_gx, banco_wf):
         total_inserido = inserir_staging(cursor, banco_gx, df, tabela_staging)
 
         executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf)
+        garantir_colunas_extra(cursor, banco_gx)
+        executar_pipeline_pos_carga(cursor, banco_gx, banco_wf)
 
         from utils.importacao_depara_procedures import executar_depara_pos_importacao
         resumo_depara = executar_depara_pos_importacao(cursor, tipo_layout, banco_gx, banco_wf)

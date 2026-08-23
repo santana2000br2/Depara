@@ -8,6 +8,7 @@ from logger import logger
 from utils.dados_depara import (
     dados_condicao_pagamento,
     dados_escolaridade,
+    dados_enquadramento,
     dados_estado,
     dados_estadocivil,
     dados_municipio,
@@ -97,6 +98,7 @@ def obter_dados_por_categoria(banco_usuario, categorias_habilitadas):
     funcoes_dados = {
         "cond_pag": dados_condicao_pagamento,
         "escol": dados_escolaridade,
+        "enquadramento": dados_enquadramento,
         "estado": dados_estado,
         "estadocivil": dados_estadocivil,
         "municipio": dados_municipio,
@@ -351,6 +353,7 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
         # Dados das categorias (usar dados reais se disponíveis, senão vazios)
         "cond_pag": dados.get("cond_pag", dados_vazios),
         "escol": dados.get("escol", dados_vazios),
+        "enquadramento": dados.get("enquadramento", dados_vazios),
         "estado": dados.get("estado", dados_vazios),
         "estadocivil": dados.get("estadocivil", dados_vazios),
         "municipio": dados.get("municipio", dados_vazios),

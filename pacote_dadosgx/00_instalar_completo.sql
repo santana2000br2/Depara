@@ -1,11 +1,11 @@
 -- =============================================================================
 -- INSTALAR COMPLETO — Extração + De/Para (DadosGX)
 -- Instalador em T-SQL puro (NAO precisa SQLCMD Mode).
--- Antes de executar: substitua DadosGx_Pontual_AgoSet pelo nome real do banco.
+-- Antes de executar: substitua DadosGx_SINAL_GAC_AgoSet pelo nome real do banco.
 -- Gerado em: 10/08/2026 17:23
 -- =============================================================================
 
-USE DadosGx_Pontual_AgoSet;  -- ALTERE para o nome real do banco DadosGX
+USE DadosGx_SINAL_GAC_AgoSet;  -- ALTERE para o nome real do banco DadosGX
 GO
 
 

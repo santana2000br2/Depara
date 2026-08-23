@@ -101,6 +101,7 @@ def listar_layouts():
             'layouts': layouts_dict,
             'cond_pag': {},
             'escol': {},
+            'enquadramento': {},
             'estado': {},
             'estadocivil': {},
             'municipio': {},
@@ -167,6 +168,7 @@ def listar_layouts():
             'layouts': [],
             'cond_pag': {},
             'escol': {},
+            'enquadramento': {},
             'estado': {},
             'estadocivil': {},
             'municipio': {},
@@ -237,6 +239,7 @@ def novo_layout():
     template_vars = {
         'cond_pag': {},
         'escol': {},
+        'enquadramento': {},
         'estado': {},
         'estadocivil': {},
         'municipio': {},

@@ -15,29 +15,58 @@ CREATE PROCEDURE dbo.up_02_Financeiro_DePara_ContaGerencial
     @BancoWF      VARCHAR(MAX)
 AS
 DECLARE @CMD NVARCHAR(MAX)
+DECLARE @BancoGX SYSNAME = LTRIM(RTRIM(@BancoDadosGX))
+DECLARE @BancoWFs SYSNAME = LTRIM(RTRIM(@BancoWF))
 
-IF NOT EXISTS (SELECT 1 FROM MASTER.DBO.SYSDATABASES WHERE NAME = @BancoDadosGX)
+IF NOT EXISTS (SELECT 1 FROM MASTER.DBO.SYSDATABASES WHERE NAME = @BancoGX)
 BEGIN
-    PRINT 'O < ' + @BancoDadosGX + ' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
+    PRINT 'O < ' + @BancoGX + ' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
     RETURN
 END
 
-SELECT @CMD = '
+-- 1) Garante colunas extras em ContaGerencial_DePara (batch separado — SQL Server
+--    não permite ADD + referência no mesmo batch).
+SELECT @CMD = N'
+    IF OBJECT_ID(N''' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara'', N''U'') IS NULL
+    BEGIN
+        RAISERROR(''Tabela ContaGerencial_DePara não existe em %s'', 16, 1, ''' + @BancoGX + N''')
+        RETURN
+    END
+
     IF NOT EXISTS (
-        SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col
-        INNER JOIN ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj ON col.object_id = obj.object_id
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
         WHERE col.name = ''ContaGerencial_Tipo'' AND obj.name = ''ContaGerencial_DePara''
     )
-        ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara ADD ContaGerencial_Tipo char(1) NULL
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara ADD ContaGerencial_Tipo char(1) NULL
 
     IF NOT EXISTS (
-        SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col
-        INNER JOIN ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj ON col.object_id = obj.object_id
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
         WHERE col.name = ''ContaGerencial_Nivel'' AND obj.name = ''ContaGerencial_DePara''
     )
-        ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara ADD ContaGerencial_Nivel char(1) NULL
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara ADD ContaGerencial_Nivel char(1) NULL
 
-    INSERT INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara
+    -- Colunas de origem em Titulo_MG (layout pode omitir descrição)
+    IF NOT EXISTS (
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
+        WHERE col.name = ''CONTAGERENCIAL_CODIGO'' AND obj.name = ''Titulo_MG''
+    )
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.Titulo_MG ADD CONTAGERENCIAL_CODIGO VARCHAR(MAX) NULL
+
+    IF NOT EXISTS (
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
+        WHERE col.name = ''CONTAGERENCIAL_DESCRICAO'' AND obj.name = ''Titulo_MG''
+    )
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.Titulo_MG ADD CONTAGERENCIAL_DESCRICAO VARCHAR(MAX) NULL
+'
+EXEC sp_executesql @CMD
+
+-- 2) Carga + match WF (após as colunas existirem)
+SELECT @CMD = N'
+    INSERT INTO ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara
         (pcg_cd, pcg_ds, ContaGerencial_Codigo, ContaGerencial_Identificador, ContaGerencial_Descricao, Origem)
     SELECT DISTINCT
         pcg_cd = ISNULL(a.CONTAGERENCIAL_CODIGO, ''''),
@@ -50,12 +79,12 @@ SELECT @CMD = '
                     WHEN (a.TIPO_MOVFINANCEIRO = ''R'') THEN ''Títulos''
                     ELSE ''''
                 END)
-    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Titulo_MG a
+    FROM ' + QUOTENAME(@BancoGX) + N'.dbo.Titulo_MG a
     WHERE
         a.Flag = 1 AND
         NOT EXISTS (
             SELECT 1
-            FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara b
+            FROM ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara b
             WHERE ISNULL(a.CONTAGERENCIAL_CODIGO, '''') = ISNULL(b.pcg_cd, '''') COLLATE DATABASE_DEFAULT
         )
 
@@ -65,8 +94,8 @@ SELECT @CMD = '
         a.ContaGerencial_Descricao = b.ContaGerencial_Descricao,
         a.ContaGerencial_Tipo = b.ContaGerencial_Tipo,
         a.ContaGerencial_Nivel = b.ContaGerencial_Nivel
-    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara a
-    INNER JOIN ' + LTRIM(RTRIM(@BancoWF)) + '.dbo.ContaGerencial b
+    FROM ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara a
+    INNER JOIN ' + QUOTENAME(@BancoWFs) + N'.dbo.ContaGerencial b
         ON b.ContaGerencial_Descricao = a.pcg_ds COLLATE Latin1_General_CI_AI
     WHERE a.ContaGerencial_Codigo = ''S/DePara''
 '

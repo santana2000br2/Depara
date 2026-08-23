@@ -1,7 +1,7 @@
 """
-Importação Forn_cli_Endereco → Arquivo_Forn_Cli_Endereco_Tratado → PessoaEndereco_MG.
+Importação Forn_cli_Contato → Arquivo_Forn_cli_Contato_Tratado → PessoaContato_MG.
 
-Carga Python na staging + procedure up_02_Extrai_PessoaEndereco_gx + De/Para.
+Carga Python na staging + procedure up_06_Extrai_PessoaContato_gx.
 """
 from logger import logger
 from utils.importacao_forn_cli import (
@@ -17,64 +17,48 @@ from utils.importacao_procedures import (
     obter_config_procedure,
 )
 
-FORN_CLI_ENDERECO_COLUNAS_CHAVE = frozenset({
-    'CPF_CNPJ', 'ENDERECO', 'CEP', 'TIPO_ENDERECO',
-})
-
-TIPO_LAYOUT = 'forn_cli_endereco'
+TIPO_LAYOUT = "forn_cli_contato"
 _cfg = obter_config_procedure(TIPO_LAYOUT)
-TABELA_STAGING = _cfg['staging']
-TABELA_DESTINO = _cfg['destino']
+TABELA_STAGING = _cfg["staging"]
+TABELA_DESTINO = _cfg["destino"]
 
 
-def layout_eh_forn_cli_endereco(nome_layout, descricao=None, colunas=None):
-    """
-    Reconhece layout Forn_cli_Endereco.
-    Aceita nomes como '2 Forn_cli_Endereco', 'Forn_cli_Endereco.txt'.
-    """
+def layout_eh_forn_cli_contato(nome_layout, descricao=None, colunas=None):
+    """Reconhece layout Forn_cli_Contato / 6 Forn_cli_Contato.txt."""
     for texto in (nome_layout, descricao):
         nome = _normalizar_nome_layout(texto)
         if not nome:
             continue
-        if nome == 'forn_cli_endereco' or 'forn_cli_endereco' in nome:
+        if nome == "forn_cli_contato" or "forn_cli_contato" in nome:
             return True
-        if nome.endswith('_endereco') and 'forn_cli' in nome:
+        if nome.endswith("_contato") and "forn_cli" in nome:
             return True
 
     if colunas:
         nomes = set()
         for c in colunas:
             if isinstance(c, dict):
-                nomes.add(str(c.get('Descricao') or '').strip().upper())
+                nomes.add(str(c.get("Descricao") or "").strip().upper())
             else:
                 nomes.add(str(c).strip().upper())
-        nomes.discard('')
+        nomes.discard("")
         if (
-            'CPF_CNPJ' in nomes
-            and ('TIPO_ENDERECO' in nomes or 'COD_IBGE' in nomes)
-            and 'CODIGO_PESSOA' not in nomes
-            and 'NOME' not in nomes
-            and 'INSC_ESTADUAL' not in nomes
+            "CPF_CNPJ" in nomes
+            and "NOME_CONTATO" in nomes
+            and "CODIGO_PESSOA" not in nomes
         ):
             return True
-        if FORN_CLI_ENDERECO_COLUNAS_CHAVE.issubset(nomes):
-            return True
-
     return False
 
 
-def importar_forn_cli_endereco_para_base(df, banco_gx, banco_wf=None):
+def importar_forn_cli_contato_para_base(df, banco_gx, banco_wf=None):
     """
     Importa DataFrame validado para DadosGX.
-    Retorna (sucesso, mensagem, resumo_dict).
+    Staging → up_06_Extrai_PessoaContato_gx → PessoaContato_MG.
     """
     from db.connection import conectar_segunda_base
 
     banco_gx = _validar_identificador_sql(banco_gx.strip())
-    if not banco_wf:
-        return False, "BancoHomo (BancoWF) é obrigatório para De/Para de Endereço.", {}
-
-    banco_wf = _validar_identificador_sql(banco_wf.strip())
 
     if df is None or df.empty:
         return False, "Nenhum dado para importar.", {}
@@ -91,10 +75,10 @@ def importar_forn_cli_endereco_para_base(df, banco_gx, banco_wf=None):
         validar_dataframe_depende_pessoa_mg(
             cursor, df,
             layout_nome=TIPO_LAYOUT,
-            colunas_layout=[{'Descricao': c} for c in df.columns],
+            colunas_layout=[{"Descricao": c} for c in df.columns],
         )
 
-        colunas_df = [c for c in df.columns if c not in ('IDtabela', 'Flag')]
+        colunas_df = [c for c in df.columns if c not in ("IDtabela", "Flag")]
         garantir_tabela_staging(cursor, banco_gx, colunas_df, TABELA_STAGING)
         total_inserido = inserir_staging(cursor, banco_gx, df, TABELA_STAGING)
         conn.commit()
@@ -102,21 +86,9 @@ def importar_forn_cli_endereco_para_base(df, banco_gx, banco_wf=None):
         executar_procedure_extracao(cursor, TIPO_LAYOUT, banco_gx, banco_wf)
         conn.commit()
 
-        from utils.importacao_depara_procedures import executar_depara_pos_importacao
-        try:
-            resumo_depara = executar_depara_pos_importacao(cursor, TIPO_LAYOUT, banco_gx, banco_wf)
-            conn.commit()
-        except Exception as exc:
-            logger.exception("De/Para de Endereço falhou após a extração")
-            resumo_depara = {'erro': str(exc)}
-            try:
-                conn.rollback()
-            except Exception:
-                pass
         resumo = obter_resumo_importacao(cursor, banco_gx, TABELA_DESTINO)
-        resumo['inseridos_staging'] = total_inserido
-        resumo['procedure'] = obter_config_procedure(TIPO_LAYOUT)['procedure']
-        resumo['depara'] = resumo_depara
+        resumo["inseridos_staging"] = total_inserido
+        resumo["procedure"] = obter_config_procedure(TIPO_LAYOUT)["procedure"]
         msg = (
             f"Importação concluída em {banco_gx}.dbo.{TABELA_DESTINO} "
             f"(procedure {resumo['procedure']}): "
@@ -126,7 +98,7 @@ def importar_forn_cli_endereco_para_base(df, banco_gx, banco_wf=None):
         return True, msg, resumo
     except Exception as e:
         conn.rollback()
-        logger.exception("Erro na importação Forn_cli_Endereco")
+        logger.exception("Erro na importação Forn_cli_Contato")
         return False, f"Erro na importação: {e}", {}
     finally:
         cursor.close()

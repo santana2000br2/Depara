@@ -272,9 +272,11 @@ def validar_dataframe_depende_produto_mg(cursor, df, layout_nome=None, layout_de
     if erros:
         amostra = erros[0]['Erro']
         total = len(erros)
-        raise RuntimeError(
-            f"Dependência Produto_MG: {total} linha(s) com produto não cadastrado. Ex.: {amostra}"
+        logger.warning(
+            "Dependência Produto_MG: %s linha(s) com produto não cadastrado (ex.: %s) — importação segue (Flag=0)",
+            total, amostra,
         )
+        return
 
     logger.info("Dependência Produto_MG: referências validadas em %s", TABELA_PRODUTO_MG)
 
@@ -310,9 +312,11 @@ def validar_staging_depende_produto_mg(cursor, tabela_staging):
             faltantes += 1
 
     if faltantes:
-        raise RuntimeError(
-            f"{faltantes} registro(s) em {tabela_staging} com PRODUTO_REFERENCIA não cadastrada em "
-            f"{TABELA_PRODUTO_MG} (Flag=1). Importe o layout 7 Produto antes."
+        # Não aborta a carga: linhas órfãs seguem e tendem a Flag=0 / Ocorrencia.
+        logger.warning(
+            "%s registro(s) em %s com PRODUTO_REFERENCIA ausente em %s — importação segue (Flag=0)",
+            faltantes, tabela_staging, TABELA_PRODUTO_MG,
         )
+        return
 
     logger.info("Staging %s validada contra %s", tabela_staging, TABELA_PRODUTO_MG)

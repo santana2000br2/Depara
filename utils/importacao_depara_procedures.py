@@ -4,7 +4,12 @@ Execução das stored procedures De/Para (legado manual → pós-importação au
 Scripts em procedure/depara/ — instalar no banco DadosGX do projeto.
 """
 from logger import logger
-from utils.importacao_forn_cli import _executar, _tabela_existe, _validar_identificador_sql
+from utils.importacao_forn_cli import (
+    _executar,
+    _executar_procedure,
+    _tabela_existe,
+    _validar_identificador_sql,
+)
 from utils.importacao_procedures import procedure_existe
 
 SEM_DEPARA = 'S/DePara'
@@ -250,7 +255,14 @@ def _executar_procedure_depara(cursor, nome_procedure, banco_gx, banco_wf):
             "Instale os scripts em procedure/depara/ no banco DadosGX."
         )
     logger.info("Executando De/Para dbo.%s (@BancoDadosGX=%s, @BancoWF=%s)", nome_procedure, banco_gx, banco_wf)
-    _executar(cursor, f"EXEC dbo.{nome_procedure} ?, ?", (banco_gx, banco_wf))
+    # Evita travar o único worker do IIS (HTTP 500 no site inteiro).
+    timeout_anterior = getattr(cursor, 'timeout', None)
+    try:
+        cursor.timeout = 90
+        _executar_procedure(cursor, f"EXEC dbo.{nome_procedure} ?, ?", (banco_gx, banco_wf))
+    finally:
+        if timeout_anterior is not None:
+            cursor.timeout = timeout_anterior
 
 
 def executar_depara_pos_importacao(cursor, tipo_layout, banco_gx, banco_wf):
@@ -273,9 +285,17 @@ def executar_depara_pos_importacao(cursor, tipo_layout, banco_gx, banco_wf):
         chave = cfg['chave']
 
         if not cfg.get('somente_stats') and proc not in executadas:
-            _executar_procedure_depara(cursor, proc, banco_gx, banco_wf)
-            executadas.add(proc)
-            resumo['procedures_executadas'].append(proc)
+            try:
+                _executar_procedure_depara(cursor, proc, banco_gx, banco_wf)
+                executadas.add(proc)
+                resumo['procedures_executadas'].append(proc)
+            except Exception as exc:
+                logger.exception(
+                    "De/Para dbo.%s falhou — a extração do arquivo é mantida: %s",
+                    proc, exc,
+                )
+                resumo.setdefault('erros', []).append(f"{proc}: {exc}")
+                executadas.add(proc)
 
         stats = {'total': 0, 'vinculados_wf': 0, 'pendentes': 0, 'inseridos': 0, 'atualizados_wf': 0}
         for tabela, col_codigo in cfg['tabelas']:

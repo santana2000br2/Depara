@@ -19,6 +19,7 @@ from routes.escopos import escopos_bp
 # Importar blueprints de depara
 from routes.condicao_pagamento import condicao_pagamento_bp
 from routes.escolaridade import escolaridade_bp
+from routes.enquadramento import enquadramento_bp
 from routes.estado import estado_bp
 from routes.estadocivil import estadocivil_bp
 from routes.municipio import municipio_bp
@@ -118,6 +119,7 @@ app.register_blueprint(escopos_bp, url_prefix="/escopos")
 # Registrar blueprints de depara
 app.register_blueprint(condicao_pagamento_bp, url_prefix="/condicao_pagamento")
 app.register_blueprint(escolaridade_bp, url_prefix="/escolaridade")
+app.register_blueprint(enquadramento_bp, url_prefix="/enquadramento")
 app.register_blueprint(estado_bp, url_prefix="/estado")
 app.register_blueprint(estadocivil_bp, url_prefix="/estadocivil")
 app.register_blueprint(municipio_bp, url_prefix="/municipio")

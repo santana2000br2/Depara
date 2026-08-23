@@ -820,6 +820,7 @@
         // Passar dados do Python para JavaScript
         window.cond_pag = {{ cond_pag | tojson | safe }};
         window.escol = {{ escol | tojson | safe }};
+        window.enquadramento = {{ enquadramento | tojson | safe }};
         window.estado = {{ estado | tojson | safe }};
         window.estadocivil = {{ estadocivil | tojson | safe }};
         window.municipio = {{ municipio | tojson | safe }};
@@ -868,9 +869,12 @@
         window.progresso_total = {{ progresso_total | tojson | safe }};
         window.escopos_habilitados = {{ escopos_habilitados | tojson | safe }};
         window.progresso_categorias = {{ progresso_categorias | tojson | safe }};
+        window.tableRoutes = Object.assign({}, window.tableRoutes || {}, {
+            'Enquadramento': "{{ url_for('enquadramento.index') }}"
+        });
     </script>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260715"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260814"></script>
     <script>
     // DEBUG: Verificar se as variáveis estão sendo carregadas
     console.log("=== DEBUG DASHBOARD ===");

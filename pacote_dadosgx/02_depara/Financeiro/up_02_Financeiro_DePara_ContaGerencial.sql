@@ -3,7 +3,7 @@
 -- Procedure: up_02_Financeiro_DePara_ContaGerencial (@BancoDadosGX, @BancoWF)
 -- =============================================================================
 
-USE [DadosGX_SeuProjeto];  -- ALTERE para o nome real do banco DadosGX
+USE DadosGx_SINAL_GAC_AgoSet;  -- ALTERE para o nome real do banco DadosGX
 GO
 
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_02_Financeiro_DePara_ContaGerencial' AND TYPE = 'P')

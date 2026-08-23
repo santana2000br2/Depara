@@ -85,6 +85,12 @@ def dados_escolaridade(banco_usuario):
     )
 
 
+def dados_enquadramento(banco_usuario):
+    return obter_dados_tabela(
+        banco_usuario, "Enquadramento_DePara", "Enquadramento_Codigo"
+    )
+
+
 def dados_estado(banco_usuario):
     return obter_dados_tabela(banco_usuario, "Estado_DePara", "Estado_Codigo")
 

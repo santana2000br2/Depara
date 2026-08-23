@@ -1,9 +1,12 @@
+from io import StringIO
+
 import pandas as pd
 import time
 import logging
 import re
 import os
 from utils.data_validation import validar_dados
+from utils.layout_validation import decodificar_bytes_arquivo
 
 
 def detectar_layout(filename, layouts_rules_map):
@@ -58,7 +61,9 @@ def processar_arquivo(file, layout, layout_rules, layout_columns):
     file.seek(0)
     try:
         logging.info(f"📖 Lendo arquivo com separador '§'")
-        df = pd.read_csv(file, sep="§", encoding="latin-1", header=None, dtype=str)
+        raw = file.read()
+        texto = decodificar_bytes_arquivo(raw)
+        df = pd.read_csv(StringIO(texto), sep="§", header=None, dtype=str)
         
         if df is None or df.empty:
             raise ValueError("Erro ao ler o arquivo ou o arquivo está vazio.")

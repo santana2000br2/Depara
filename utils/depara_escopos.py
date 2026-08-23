@@ -2,7 +2,7 @@
 
 ESCOPO_PARA_CATEGORIA = {
     "PESSOA": [
-        "cond_pag", "escol", "estado", "estadocivil", "municipio", "pais",
+        "cond_pag", "escol", "enquadramento", "estado", "estadocivil", "municipio", "pais",
         "profissao", "segmentomercado", "tipologradouro",
     ],
     "PRODUTOS": [

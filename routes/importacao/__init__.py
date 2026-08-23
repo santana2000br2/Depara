@@ -42,6 +42,7 @@ def base_template_vars(**kwargs):
     vars_dict = {
         'cond_pag': {},
         'escol': {},
+        'enquadramento': {},
         'estado': {},
         'estadocivil': {},
         'municipio': {},
@@ -117,6 +118,8 @@ def _detectar_tipo_importacao(nome_layout, descricao_layout=None, colunas_layout
     from utils.importacao_forn_cli_documento import layout_eh_forn_cli_documento
     from utils.importacao_forn_cli_endereco import layout_eh_forn_cli_endereco
     from utils.importacao_forn_cli_enquadramento import layout_eh_forn_cli_enquadramento
+    from utils.importacao_forn_cli_telefone import layout_eh_forn_cli_telefone
+    from utils.importacao_forn_cli_contato import layout_eh_forn_cli_contato
     from utils.importacao_produto_estoque import layout_eh_produto_estoque
     from utils.importacao_prod_locacao import layout_eh_prod_locacao
     from utils.importacao_movimento_estoque import layout_eh_movimento_estoque
@@ -145,14 +148,18 @@ def _detectar_tipo_importacao(nome_layout, descricao_layout=None, colunas_layout
         return 'produto_estoque'
     if layout_eh_produto(nome_layout, descricao_layout, colunas_layout):
         return 'produto'
-    if layout_eh_forn_cli(nome_layout, descricao_layout, colunas_layout):
-        return 'forn_cli'
     if layout_eh_forn_cli_endereco(nome_layout, descricao_layout, colunas_layout):
         return 'forn_cli_endereco'
     if layout_eh_forn_cli_documento(nome_layout, descricao_layout, colunas_layout):
         return 'forn_cli_documento'
     if layout_eh_forn_cli_enquadramento(nome_layout, descricao_layout, colunas_layout):
         return 'forn_cli_enquadramento'
+    if layout_eh_forn_cli_telefone(nome_layout, descricao_layout, colunas_layout):
+        return 'forn_cli_telefone'
+    if layout_eh_forn_cli_contato(nome_layout, descricao_layout, colunas_layout):
+        return 'forn_cli_contato'
+    if layout_eh_forn_cli(nome_layout, descricao_layout, colunas_layout):
+        return 'forn_cli'
     return None
 
 
@@ -200,6 +207,28 @@ def _config_importacao_por_tipo(tipo):
             'motivo_erros': 'CPF/CNPJ ausente, não cadastrado em Pessoa_MG ou colunas faltando',
             'flash_flag': (
                 'consulte Ocorrencia em {banco}.dbo.PessoaEnquadramento_MG. '
+                'Requer cadastro prévio em Pessoa_MG (layout 1 Forn_cli.txt).'
+            ),
+        }
+    if tipo == 'forn_cli_telefone':
+        return {
+            'tabela_destino': cfg_proc.get('destino', 'PessoaTelefone_MG'),
+            'procedure': proc,
+            'motivo_nao_suportado': None,
+            'motivo_erros': 'CPF/CNPJ ausente, não cadastrado em Pessoa_MG ou colunas faltando',
+            'flash_flag': (
+                'consulte Ocorrencia em {banco}.dbo.PessoaTelefone_MG. '
+                'Requer cadastro prévio em Pessoa_MG (layout 1 Forn_cli.txt).'
+            ),
+        }
+    if tipo == 'forn_cli_contato':
+        return {
+            'tabela_destino': cfg_proc.get('destino', 'PessoaContato_MG'),
+            'procedure': proc,
+            'motivo_nao_suportado': None,
+            'motivo_erros': 'CPF/CNPJ ausente, não cadastrado em Pessoa_MG ou colunas faltando',
+            'flash_flag': (
+                'consulte Ocorrencia em {banco}.dbo.PessoaContato_MG. '
                 'Requer cadastro prévio em Pessoa_MG (layout 1 Forn_cli.txt).'
             ),
         }
@@ -331,18 +360,13 @@ def _status_importacao_base(nome_layout, df_processado, descricao_layout=None, c
             'tabela_destino': '',
         }
 
+    # Erros de validação não bloqueiam a importação: o arquivo segue,
+    # linhas problemáticas tendem a Flag=0 e o relatório de erros permanece.
     if tem_erros_bloqueantes:
-        return {
-            'exibe': True,
-            'pode': False,
-            'motivo': (
-                'Importação não realizada: existem erros bloqueantes '
-                f'({cfg["motivo_erros"]}).'
-            ),
-            'tipo': tipo,
-            'tabela_destino': cfg['tabela_destino'],
-            'procedure': cfg.get('procedure', ''),
-        }
+        logger.info(
+            "Importação seguirá com erros de validação (relatório/Flag=0): layout=%r",
+            nome_layout,
+        )
 
     if df_processado is None or df_processado.empty:
         return {
@@ -390,11 +414,13 @@ def _status_importacao_base(nome_layout, df_processado, descricao_layout=None, c
 
 
 def _executar_importacao_automatica(layout_nome, df_processado, layout_descricao=None, colunas_layout=None):
-    """Importa layouts Forn_cli quando validação não tem erros bloqueantes."""
+    """Importa o arquivo processado; erros de validação não impedem a carga."""
     from utils.importacao_forn_cli import importar_forn_cli_para_base
     from utils.importacao_forn_cli_documento import importar_forn_cli_documento_para_base
     from utils.importacao_forn_cli_endereco import importar_forn_cli_endereco_para_base
     from utils.importacao_forn_cli_enquadramento import importar_forn_cli_enquadramento_para_base
+    from utils.importacao_forn_cli_telefone import importar_forn_cli_telefone_para_base
+    from utils.importacao_forn_cli_contato import importar_forn_cli_contato_para_base
     from utils.importacao_produto import importar_produto_para_base
     from utils.importacao_produto_estoque import importar_produto_estoque_para_base
     from utils.importacao_prod_locacao import importar_prod_locacao_para_base
@@ -435,6 +461,10 @@ def _executar_importacao_automatica(layout_nome, df_processado, layout_descricao
         sucesso, mensagem, resumo = importar_forn_cli_endereco_para_base(df_processado, banco_gx, banco_wf)
     elif tipo == 'forn_cli_enquadramento':
         sucesso, mensagem, resumo = importar_forn_cli_enquadramento_para_base(df_processado, banco_gx, banco_wf)
+    elif tipo == 'forn_cli_telefone':
+        sucesso, mensagem, resumo = importar_forn_cli_telefone_para_base(df_processado, banco_gx, banco_wf)
+    elif tipo == 'forn_cli_contato':
+        sucesso, mensagem, resumo = importar_forn_cli_contato_para_base(df_processado, banco_gx, banco_wf)
     elif tipo == 'produto':
         sucesso, mensagem, resumo = importar_produto_para_base(df_processado, banco_gx, banco_wf)
     elif tipo == 'produto_estoque':
@@ -491,7 +521,7 @@ def _executar_importacao_automatica(layout_nome, df_processado, layout_descricao
     return resultado
 
 
-def _montar_vars_resultado(process_id, layout_nome, layout_id, df_processado, df_erros, df_avisos, mensagem, descricao_layout=None, colunas_layout=None, importacao_resultado=None, somente_validacao=False):
+def _montar_vars_resultado(process_id, layout_nome, layout_id, df_processado, df_erros, df_avisos, mensagem, descricao_layout=None, colunas_layout=None, importacao_resultado=None, somente_validacao=False, aguardando_confirmacao_importacao=False):
     """Monta variáveis de template para exibir resultado do processamento."""
     total_erros = len(df_erros) if df_erros is not None and not df_erros.empty else 0
     total_avisos = len(df_avisos) if df_avisos is not None and not df_avisos.empty else 0
@@ -510,6 +540,19 @@ def _montar_vars_resultado(process_id, layout_nome, layout_id, df_processado, df
             layout_nome, descricao_layout, colunas_layout,
         )
 
+    amostra_erros = []
+    if (
+        aguardando_confirmacao_importacao
+        and df_erros is not None
+        and not df_erros.empty
+    ):
+        for _, row in df_erros.head(8).iterrows():
+            amostra_erros.append({
+                'Linha': row.get('Linha', ''),
+                'Coluna': row.get('Coluna', ''),
+                'Erro': row.get('Erro', ''),
+            })
+
     return {
         'erros_processados': total_erros > 0,
         'layout': layout_nome,
@@ -521,6 +564,8 @@ def _montar_vars_resultado(process_id, layout_nome, layout_id, df_processado, df
         'importacao_ultimo_resultado': None if somente_validacao else importacao_resultado,
         'mensagem_validacao': mensagem,
         'alerta_dependencia_arquivos': alerta_dependencia_arquivos,
+        'aguardando_confirmacao_importacao': bool(aguardando_confirmacao_importacao),
+        'amostra_erros_confirmacao': amostra_erros,
     }
 
 
@@ -529,19 +574,43 @@ def _restaurar_processamento(process_id, somente_validacao=False):
     data = carregar_processamento(process_id, usuario_id)
     if not data:
         return None
-    return _montar_vars_resultado(
+
+    df_erros = data.get('df_erros')
+    total_erros = len(df_erros) if df_erros is not None and not df_erros.empty else 0
+    importacao_resultado = None if somente_validacao else data.get('importacao_resultado')
+
+    vars_resultado = _montar_vars_resultado(
         process_id,
         data.get('layout_nome', ''),
         data.get('layout_id'),
         data.get('df_processado'),
-        data.get('df_erros'),
+        df_erros,
         data.get('df_avisos'),
         data.get('mensagem', ''),
         data.get('layout_descricao'),
         data.get('colunas_layout'),
-        importacao_resultado=None if somente_validacao else data.get('importacao_resultado'),
+        importacao_resultado=importacao_resultado,
         somente_validacao=somente_validacao,
+        aguardando_confirmacao_importacao=False,
     )
+    aguardando = (
+        not somente_validacao
+        and not importacao_resultado
+        and total_erros > 0
+        and bool((vars_resultado.get('importacao_base') or {}).get('pode'))
+    )
+    if aguardando:
+        vars_resultado['aguardando_confirmacao_importacao'] = True
+        amostra = []
+        if df_erros is not None and not df_erros.empty:
+            for _, row in df_erros.head(8).iterrows():
+                amostra.append({
+                    'Linha': row.get('Linha', ''),
+                    'Coluna': row.get('Coluna', ''),
+                    'Erro': row.get('Erro', ''),
+                })
+        vars_resultado['amostra_erros_confirmacao'] = amostra
+    return vars_resultado
 
 
 def _pode_importar_forn_cli(nome_layout, df_processado):
@@ -863,10 +932,13 @@ def processar_arquivo_com_layout(request, template_vars, somente_validacao=False
         total_avisos = len(df_avisos) if df_avisos is not None and not df_avisos.empty else 0
 
         if not somente_validacao:
-            # Na importação, o painel de resultado concentra o resumo.
-            # Flashs ficam só para erros bloqueantes e avisos de dependência.
+            # Erros: pede confirmação antes de importar. Sem erros: importa na hora.
             if total_erros > 0:
-                flash(f"Encontrados {total_erros} erros bloqueantes — importação não realizada", "warning")
+                flash(
+                    f"Encontrados {total_erros} erro(s) de validação — "
+                    "confirme se deseja importar mesmo assim.",
+                    "warning",
+                )
             elif not banco_gx:
                 from utils.importacao_pessoa_mg_dependencia import layout_depende_pessoa_mg
                 from utils.importacao_produto_mg_dependencia import layout_depende_produto_mg
@@ -885,37 +957,57 @@ def processar_arquivo_com_layout(request, template_vars, somente_validacao=False
         else:
             # Validador de estrutura: mensagens objetivas
             if total_erros > 0:
-                flash(f"Encontrados {total_erros} erros bloqueantes", "warning")
+                flash(f"Encontrados {total_erros} erros de validação", "warning")
             else:
-                flash("Nenhum erro bloqueante — estrutura do arquivo válida", "success")
+                flash("Nenhum erro de validação — estrutura do arquivo válida", "success")
             if total_avisos > 0:
                 flash(f"{total_avisos} aviso(s): datas ou valores ajustados automaticamente", "warning")
 
         importacao_resultado = None
-        if not somente_validacao and total_erros == 0:
-            logger.info("Iniciando importação automática: layout=%s", layout_dict['NomeLayout'])
-            importacao_resultado = _executar_importacao_automatica(
-                layout_dict['NomeLayout'],
-                df_processado,
-                layout_dict.get('Descricao'),
-                colunas_dict,
-            )
-            logger.info(
-                "Importação automática finalizada: layout=%s, sucesso=%s",
-                layout_dict['NomeLayout'],
-                importacao_resultado.get('sucesso') if importacao_resultado else None,
-            )
-            if importacao_resultado:
-                salvar_importacao_resultado(process_id, usuario_id, importacao_resultado)
-                if importacao_resultado.get("sucesso"):
-                    from utils.layout_importacao_projeto import registrar_layout_importado
-                    projeto = session.get("projeto_selecionado") or {}
-                    registrar_layout_importado(
-                        projeto.get("ProjetoID"),
-                        layout_id,
-                        nome_layout=layout_dict.get("NomeLayout"),
-                        usuario_id=usuario_id,
-                    )
+        aguardando_confirmacao = False
+        if not somente_validacao:
+            if total_erros > 0:
+                status_imp = _status_importacao_base(
+                    layout_dict['NomeLayout'],
+                    df_processado,
+                    layout_dict.get('Descricao'),
+                    colunas_dict,
+                    tem_erros_bloqueantes=True,
+                )
+                aguardando_confirmacao = bool(status_imp.get('pode'))
+                logger.info(
+                    "Importação aguardando confirmação: layout=%s erros=%s pode=%s",
+                    layout_dict['NomeLayout'],
+                    total_erros,
+                    aguardando_confirmacao,
+                )
+            else:
+                logger.info(
+                    "Iniciando importação automática: layout=%s (sem erros de validação)",
+                    layout_dict['NomeLayout'],
+                )
+                importacao_resultado = _executar_importacao_automatica(
+                    layout_dict['NomeLayout'],
+                    df_processado,
+                    layout_dict.get('Descricao'),
+                    colunas_dict,
+                )
+                logger.info(
+                    "Importação automática finalizada: layout=%s, sucesso=%s",
+                    layout_dict['NomeLayout'],
+                    importacao_resultado.get('sucesso') if importacao_resultado else None,
+                )
+                if importacao_resultado:
+                    salvar_importacao_resultado(process_id, usuario_id, importacao_resultado)
+                    if importacao_resultado.get("sucesso"):
+                        from utils.layout_importacao_projeto import registrar_layout_importado
+                        projeto = session.get("projeto_selecionado") or {}
+                        registrar_layout_importado(
+                            projeto.get("ProjetoID"),
+                            layout_id,
+                            nome_layout=layout_dict.get("NomeLayout"),
+                            usuario_id=usuario_id,
+                        )
 
         try:
             from utils.historico_envio_arquivo import registrar_envio_arquivo
@@ -936,6 +1028,8 @@ def processar_arquivo_com_layout(request, template_vars, somente_validacao=False
                 process_id=process_id,
                 usuario_id=usuario_id or usuario_sess.get("usuario_id"),
                 usuario_nome=usuario_sess.get("usuario"),
+                df_erros=df_erros,
+                df_avisos=df_avisos,
             )
         except Exception:
             logger.exception("Falha ao gravar histórico de envio")
@@ -952,6 +1046,7 @@ def processar_arquivo_com_layout(request, template_vars, somente_validacao=False
             colunas_dict,
             importacao_resultado=importacao_resultado,
             somente_validacao=somente_validacao,
+            aguardando_confirmacao_importacao=aguardando_confirmacao,
         ))
 
         return _render()
@@ -1290,14 +1385,117 @@ def exportar_processado(process_id):
     return exportar_processado_processamento(process_id)
 
 
-@importacao_bp.route('/importar_base/<process_id>', methods=['POST'])
-def importar_base(process_id):
-    """Redireciona — importação é automática após validação sem erros bloqueantes."""
+@importacao_bp.route('/confirmar_importacao/<process_id>', methods=['POST'])
+def confirmar_importacao(process_id):
+    """Importa um processamento já validado após o usuário confirmar apesar dos erros."""
     bloqueio = _bloqueio_acesso_envio_arquivos(somente_validacao=False)
     if bloqueio:
         return bloqueio
-    flash("A importação é automática ao processar o arquivo. Envie o arquivo novamente.", "info")
-    return redirect(url_for('importacao.index', process_id=process_id))
+
+    usuario = session.get("usuario") or {}
+    usuario_id = usuario.get("usuario_id")
+    data = carregar_processamento(process_id, usuario_id)
+    if not data:
+        flash("Resultado do processamento expirado ou não encontrado. Processe o arquivo novamente.", "warning")
+        return redirect(url_for("importacao.index"))
+
+    if data.get("importacao_resultado"):
+        flash("Este arquivo já foi importado.", "info")
+        return redirect(url_for("importacao.index", process_id=process_id))
+
+    df_processado = data.get("df_processado")
+    layout_nome = data.get("layout_nome") or ""
+    layout_id = data.get("layout_id")
+    layout_descricao = data.get("layout_descricao")
+    colunas_dict = data.get("colunas_layout") or []
+
+    # Preferir colunas completas do banco (o store só guarda os nomes).
+    if layout_id:
+        conn = conectar_banco()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM Layouts WHERE LayoutID = ?", (layout_id,))
+                layout_row = cursor.fetchone()
+                if layout_row:
+                    layout_dict = row_to_dict(layout_row)
+                    layout_nome = layout_dict.get("NomeLayout") or layout_nome
+                    layout_descricao = layout_dict.get("Descricao") or layout_descricao
+                cursor.execute(
+                    "SELECT * FROM LayoutColunas WHERE LayoutID = ? ORDER BY Posicao",
+                    (layout_id,),
+                )
+                cols = cursor.fetchall()
+                if cols:
+                    colunas_dict = [row_to_dict(c) for c in cols]
+            except Exception:
+                logger.exception("Falha ao recarregar layout %s para confirmação", layout_id)
+            finally:
+                conn.close()
+
+    logger.info(
+        "Confirmando importação com erros: process_id=%s layout=%s",
+        process_id, layout_nome,
+    )
+    importacao_resultado = _executar_importacao_automatica(
+        layout_nome,
+        df_processado,
+        layout_descricao,
+        colunas_dict,
+    )
+    if importacao_resultado:
+        salvar_importacao_resultado(process_id, usuario_id, importacao_resultado)
+        if importacao_resultado.get("sucesso"):
+            from utils.layout_importacao_projeto import registrar_layout_importado
+            projeto = session.get("projeto_selecionado") or {}
+            registrar_layout_importado(
+                projeto.get("ProjetoID"),
+                layout_id,
+                nome_layout=layout_nome,
+                usuario_id=usuario_id,
+            )
+            flash("Importação confirmada e concluída.", "success")
+        else:
+            flash(
+                importacao_resultado.get("mensagem") or "Falha na importação após confirmação.",
+                "error",
+            )
+    else:
+        flash("Importação automática não disponível para este layout.", "warning")
+
+    try:
+        from utils.historico_envio_arquivo import registrar_envio_arquivo
+        df_erros = data.get("df_erros")
+        df_avisos = data.get("df_avisos")
+        projeto = session.get("projeto_selecionado") or {}
+        registrar_envio_arquivo(
+            projeto.get("ProjetoID"),
+            layout_id=layout_id,
+            nome_layout=layout_nome,
+            nome_arquivo=None,
+            modo="importacao",
+            total_linhas=len(df_processado) if df_processado is not None else 0,
+            total_erros=len(df_erros) if df_erros is not None and not df_erros.empty else 0,
+            total_avisos=len(df_avisos) if df_avisos is not None and not df_avisos.empty else 0,
+            importacao_realizada=bool(
+                importacao_resultado and importacao_resultado.get("sucesso")
+            ),
+            process_id=process_id,
+            usuario_id=usuario_id,
+            usuario_nome=usuario.get("usuario"),
+            df_erros=df_erros,
+            df_avisos=df_avisos,
+        )
+    except Exception:
+        logger.exception("Falha ao gravar histórico após confirmação de importação")
+
+    return redirect(url_for("importacao.index", process_id=process_id))
+
+
+@importacao_bp.route('/importar_base/<process_id>', methods=['POST'])
+def importar_base(process_id):
+    """Compat: redireciona para a confirmação de importação."""
+    return confirmar_importacao(process_id)
 
 
 @importacao_bp.route('/gerar_depara/<process_id>', methods=['POST'])

@@ -46,8 +46,8 @@ PRINT '=========================================================================
 PRINT ' Extrai_Titulo - Atualiza CPFCNPJ'
 PRINT '=========================================================================================='
 
-SELECT @CMD = '
-    UPDATE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Financeiro_Tratado SET
+SELECT @CMD = N'
+    UPDATE ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.dbo.Arquivo_Financeiro_Tratado SET
         CPF_CNPJ = RTRIM(LTRIM(dbo.FN_RemoveCaracteresNaoInteiros(CPF_CNPJ)))
 '
 EXEC sp_executesql @CMD
@@ -56,11 +56,11 @@ PRINT '=========================================================================
 PRINT ' Cria a cópia do Arquivo_Financeiro_Tratado para Migração'
 PRINT '=========================================================================================='
 
-SELECT @CMD = '
-    IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects WHERE type = ''U'' AND name =''Titulo_MG'') )
+SELECT @CMD = N'
+    IF ( NOT EXISTS (SELECT 1 FROM ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.sys.objects WHERE type = ''U'' AND name =''Titulo_MG'') )
     BEGIN
-        SELECT a.* INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Titulo_MG
-        FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Financeiro_Tratado a
+        SELECT a.* INTO ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.dbo.Titulo_MG
+        FROM ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.dbo.Arquivo_Financeiro_Tratado a
         WHERE 1 = 1
     END
 '

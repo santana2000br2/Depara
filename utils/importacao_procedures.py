@@ -5,12 +5,17 @@ Procedures instaladas no banco DadosGX do projeto (script 01_Create_PRC_Extrai_P
 """
 from logger import logger
 from utils.importacao_forn_cli import (
+    COLUNAS_EXTRA_PESSOA_MG,
+    _coluna_existe,
     _executar,
+    _executar_procedure,
     _quote_db,
     _quote_table,
     _tabela_existe,
     _validar_identificador_sql,
     garantir_colunas_extra,
+    garantir_pessoa_em_producao,
+    popular_pessoa_docidentificador,
 )
 
 # Mapeamento layout → procedure / tabelas (conforme script legado)
@@ -119,6 +124,8 @@ LAYOUTS_PRECRIAR_DESTINO = frozenset({
     'forn_cli_endereco',
     'forn_cli_documento',
     'forn_cli_enquadramento',
+    'forn_cli_telefone',
+    'forn_cli_contato',
     'produto',
     'produto_estoque',
     'prod_locacao',
@@ -130,8 +137,20 @@ LAYOUTS_PRECRIAR_DESTINO = frozenset({
     'financeiro',
 })
 
-# Colunas que as procedures legadas só criam dentro do IF NOT EXISTS (SELECT INTO).
+# Colunas extras do script original (ALTER após o SELECT INTO).
+# No legado de Documento/Telefone/etc. o ALTER fica DENTRO do IF NOT EXISTS da tabela;
+# se o Python pré-cria o destino, essas colunas nunca são criadas — por isso
+# sempre aplicamos depois da procedure.
 COLUNAS_EXTRA_POS_PRECRIAR = {
+    'forn_cli': list(COLUNAS_EXTRA_PESSOA_MG),
+    'forn_cli_endereco': [
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('Municipio_Codigo', 'smallint NULL'),
+        ('Estado_Codigo', 'char(2) NULL'),
+        ('Pais_Codigo', 'smallint NULL'),
+        ('TipoLogradouro_Codigo', 'smallint NULL'),
+        ('Ocorrencia', 'VARCHAR(500) NULL'),
+    ],
     'forn_cli_documento': [
         ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
         ('Ocorrencia', 'VARCHAR(500) NULL'),
@@ -141,6 +160,14 @@ COLUNAS_EXTRA_POS_PRECRIAR = {
         ('Municipio_Codigo', 'int NULL'),
         ('Estado_Codigo', 'varchar(10) NULL'),
         ('Data_Cadastro', 'date NULL'),
+        ('Ocorrencia', 'VARCHAR(500) NULL'),
+    ],
+    'forn_cli_telefone': [
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('Ocorrencia', 'VARCHAR(500) NULL'),
+    ],
+    'forn_cli_contato': [
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
         ('Ocorrencia', 'VARCHAR(500) NULL'),
     ],
     'produto': [
@@ -295,9 +322,9 @@ def dropar_tabela_se_existir(cursor, banco_gx, nome_tabela):
     """Remove tabela destino para a procedure recriar (legado só faz SELECT INTO se não existir)."""
     if not _tabela_existe(cursor, nome_tabela):
         return False
-    db = _quote_db(banco_gx)
     tbl = _quote_table(nome_tabela)
-    _executar(cursor, f"DROP TABLE {db}.dbo.{tbl}")
+    # Conexão já está no DadosGX — usar dbo. evita falha com nome em 3 partes.
+    _executar(cursor, f"DROP TABLE dbo.{tbl}")
     logger.info("Tabela %s removida antes da procedure", nome_tabela)
     return True
 
@@ -310,17 +337,41 @@ def precriar_destino_antes_procedure(cursor, banco_gx, tabela_staging, tabela_de
     possui coluna Flag (criada pelo Python), o que gera erro 2705 silencioso
     dentro de sp_executesql. Pré-criar com SELECT * (como up_01) evita isso.
     """
-    db = _quote_db(banco_gx)
     staging = _quote_table(tabela_staging)
     dest = _quote_table(tabela_destino)
+
+    if not _tabela_existe(cursor, tabela_staging):
+        raise RuntimeError(
+            f"Staging dbo.{tabela_staging} não existe em {banco_gx} — "
+            f"impossível pré-criar {tabela_destino}."
+        )
+
+    if _tabela_existe(cursor, tabela_destino):
+        _executar(cursor, f"DROP TABLE dbo.{dest}")
+
     _executar(
         cursor,
-        f"SELECT * INTO {db}.dbo.{dest} FROM {db}.dbo.{staging} WHERE 1=1",
+        f"SELECT * INTO dbo.{dest} FROM dbo.{staging} WHERE 1=1",
     )
+
+    if not _tabela_existe(cursor, tabela_destino):
+        raise RuntimeError(
+            f"Falha ao pré-criar dbo.{tabela_destino} a partir de dbo.{tabela_staging} "
+            f"em {banco_gx}."
+        )
+
+    # Flag vem NULL da staging; procedure espera Flag numérico.
+    if _coluna_existe(cursor, tabela_destino, 'Flag'):
+        _executar(
+            cursor,
+            f"UPDATE dbo.{dest} SET Flag = 1 WHERE Flag IS NULL",
+        )
+
     logger.info(
-        "Tabela %s pré-criada a partir de %s (procedure legada pula SELECT INTO)",
+        "Tabela %s pré-criada a partir de %s (%s linha(s))",
         tabela_destino,
         tabela_staging,
+        _contar_staging(cursor, tabela_destino),
     )
 
 
@@ -352,9 +403,11 @@ def executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf=None, dd
         )
 
     if not _tabela_existe(cursor, cfg['staging']):
+        # Última tentativa: a carga deveria ter criado; evita 42S02 opaco na procedure.
         raise RuntimeError(
-            f"Tabela de staging {cfg['staging']} não existe em {banco_gx}. "
-            "A carga do arquivo deve ocorrer antes da procedure."
+            f"Tabela de staging dbo.{cfg['staging']} não existe em {banco_gx}. "
+            "A carga do arquivo deve criar essa tabela antes da procedure. "
+            "Reinicie o aplicativo e importe novamente."
         )
 
     from utils.importacao_pessoa_mg_dependencia import (
@@ -376,6 +429,8 @@ def executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf=None, dd
     )
     if tipo_layout in LAYOUTS_DEPENDEM_PESSOA_MG and tipo_layout not in LAYOUTS_PESSOA_MG_OPCIONAL:
         validar_staging_depende_pessoa_mg(cursor, cfg['staging'])
+    if tipo_layout in LAYOUTS_DEPENDEM_PESSOA_MG or str(tipo_layout).startswith('forn_cli_'):
+        garantir_pessoa_em_producao(cursor)
     if tipo_layout in LAYOUTS_DEPENDEM_PRODUTO_MG:
         validar_staging_depende_produto_mg(cursor, cfg['staging'])
     if tipo_layout in LAYOUTS_DEPENDEM_VEICULO_MG:
@@ -385,34 +440,74 @@ def executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf=None, dd
 
     dropar_tabela_se_existir(cursor, banco_gx, destino)
 
+    colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
+    # Sempre pré-cria o destino a partir da staging para layouts mapeados —
+    # a procedure legada costuma falhar silenciosamente no SELECT INTO (Flag).
     if tipo_layout in LAYOUTS_PRECRIAR_DESTINO:
         precriar_destino_antes_procedure(cursor, banco_gx, cfg['staging'], destino)
-        colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
         if colunas_extra:
             garantir_colunas_extra(
                 cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
             )
+        # Confirma staging+destino antes do EXEC: se a procedure abortar a
+        # transação, a carga do arquivo não é desfeita.
+        try:
+            cursor.connection.commit()
+        except Exception:
+            pass
 
     logger.info("Executando dbo.%s (@BancoDadosGX=%s)", proc, banco_gx)
 
-    if cfg.get('requer_wf'):
-        if not banco_wf:
-            raise ValueError(f"Procedure {proc} exige @BancoWF.")
-        banco_wf = _validar_identificador_sql(banco_wf.strip())
-        _executar(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
-    elif tipo_layout == 'forn_cli_telefone':
-        _executar(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, ddd_padrao))
-    else:
-        _executar(cursor, f"EXEC dbo.{proc} ?", (banco_gx,))
+    try:
+        if cfg.get('requer_wf'):
+            if not banco_wf:
+                raise ValueError(f"Procedure {proc} exige @BancoWF.")
+            banco_wf = _validar_identificador_sql(banco_wf.strip())
+            _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
+        elif tipo_layout == 'forn_cli_telefone':
+            _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, ddd_padrao))
+        else:
+            _executar_procedure(cursor, f"EXEC dbo.{proc} ?", (banco_gx,))
+    except Exception as exc:
+        logger.exception("Procedure dbo.%s falhou: %s", proc, exc)
+        try:
+            cursor.connection.rollback()
+        except Exception:
+            pass
+        if not _tabela_existe(cursor, destino):
+            raise
+        logger.warning(
+            "Procedure dbo.%s falhou, mas %s já existe — extração segue (colunas extras / DocIdentificador)",
+            proc, destino,
+        )
+
+    if not _tabela_existe(cursor, destino):
+        n_staging = _contar_staging(cursor, cfg['staging'])
+        logger.warning(
+            "Procedure %s concluiu sem %s — recriando a partir da staging (%s regs)",
+            proc, destino, n_staging,
+        )
+        precriar_destino_antes_procedure(cursor, banco_gx, cfg['staging'], destino)
+        if colunas_extra:
+            garantir_colunas_extra(
+                cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
+            )
 
     if not _tabela_existe(cursor, destino):
         n_staging = _contar_staging(cursor, cfg['staging'])
         raise RuntimeError(
             f"Procedure {proc} concluiu, mas {destino} não foi criada em {banco_gx}. "
             f"Staging possui {n_staging} registro(s). "
-            "Causa provável: falha silenciosa no SELECT INTO da procedure legada "
-            "(coluna Flag duplicada). Atualize o aplicativo ou reinstale a procedure corrigida."
+            "Falha ao pré-criar o destino a partir da staging."
         )
+
+    colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
+    if colunas_extra:
+        garantir_colunas_extra(
+            cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
+        )
+    if tipo_layout == 'forn_cli' or str(tipo_layout).startswith('forn_cli_'):
+        popular_pessoa_docidentificador(cursor, destino)
 
     logger.info("Procedure dbo.%s concluída → %s", proc, destino)
     return destino
@@ -458,7 +553,7 @@ def executar_pipeline_produto(cursor, banco_gx, banco_wf):
                 "e execute up_Replace_Name_DadosGx_Procedures com o nome do banco."
             )
         logger.info("Executando dbo.%s (@BancoDadosGX=%s, @BancoWF=%s)", proc, banco_gx, banco_wf)
-        _executar(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
+        _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
 
     if not _tabela_existe(cursor, destino):
         n_staging = _contar_staging(cursor, staging)

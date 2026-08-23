@@ -189,10 +189,11 @@ def validar_dataframe_depende_veiculo_mg(cursor, df, layout_nome=None, layout_de
     erros = validar_linhas_dependem_veiculo_mg(linhas, colunas_simples, chassis, veiculo_mg_existe=existe)
     if erros:
         amostra = erros[0]['Erro']
-        raise RuntimeError(
-            f"Dependência Veiculo_MG: {len(erros)} linha(s) com CHASSI não cadastrado. "
-            f"Ex.: {amostra}"
+        logger.warning(
+            "Dependência Veiculo_MG: %s linha(s) com CHASSI não cadastrado (ex.: %s) — importação segue (Flag=0)",
+            len(erros), amostra,
         )
+        return
 
     logger.info("Dependência Veiculo_MG: todos os CHASSI encontrados em %s", TABELA_VEICULO_MG)
 
@@ -222,9 +223,11 @@ def validar_staging_depende_veiculo_mg(cursor, tabela_staging):
             faltantes += 1
 
     if faltantes:
-        raise RuntimeError(
-            f"{faltantes} registro(s) em {tabela_staging} com CHASSI ausente em {TABELA_VEICULO_MG}. "
-            "Importe o layout Veiculo antes deste layout."
+        # Não aborta a carga: linhas órfãs seguem e tendem a Flag=0 / Ocorrencia.
+        logger.warning(
+            "%s registro(s) em %s com CHASSI ausente em %s — importação segue (Flag=0)",
+            faltantes, tabela_staging, TABELA_VEICULO_MG,
         )
+        return
 
     logger.info("Staging %s validada contra %s", tabela_staging, TABELA_VEICULO_MG)

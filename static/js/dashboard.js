@@ -4,6 +4,7 @@
 const tableRoutes = {
     'Condição de Pagamento': '/condicao_pagamento',
     'Escolaridade': '/escolaridade',
+    'Enquadramento': '/enquadramento',
     'Estado': '/estado',
     'Estado Civil': '/estadocivil',
     'Município': '/municipio',
@@ -106,8 +107,10 @@ function createTableLinks() {
 
             console.log(`Tabela: ${tableName}, Rota: ${route}`);
 
-            if (route) {
-                const urlWithParams = `${route}?banco=${encodeURIComponent(banco_usuario)}`;
+            const extraRoutes = window.tableRoutes || {};
+            const resolvedRoute = extraRoutes[tableName] || route;
+            if (resolvedRoute) {
+                const urlWithParams = `${resolvedRoute}?banco=${encodeURIComponent(banco_usuario)}`;
                 firstCell.innerHTML = `<a href="${urlWithParams}" class="table-link">${tableName}</a>`;
             }
         }
@@ -200,6 +203,7 @@ function fillPessoaTable() {
     const data = [
         { tabela: 'Condição de Pagamento', ...(window.cond_pag || {}) },
         { tabela: 'Escolaridade', ...(window.escol || {}) },
+        { tabela: 'Enquadramento', ...(window.enquadramento || {}) },
         { tabela: 'Estado', ...(window.estado || {}) },
         { tabela: 'Estado Civil', ...(window.estadocivil || {}) },
         { tabela: 'Município', ...(window.municipio || {}) },
@@ -468,6 +472,7 @@ window.addEventListener('load', function () {
     console.log("=== DEBUG COMPLETO DASHBOARD ===");
     console.log("cond_pag:", window.cond_pag);
     console.log("escol:", window.escol);
+    console.log("enquadramento:", window.enquadramento);
     console.log("estado:", window.estado);
     console.log("progresso_total:", window.progresso_total);
     console.log("escopos_habilitados:", window.escopos_habilitados);

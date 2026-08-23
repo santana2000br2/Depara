@@ -436,10 +436,11 @@ def validar_dataframe_depende_pessoa_mg(cursor, df, layout_nome=None, layout_des
     if erros:
         amostra = erros[0]['Erro']
         total = len(erros)
-        raise RuntimeError(
-            f"Dependência Pessoa_MG: {total} linha(s) com CPF/CNPJ não cadastrado. "
-            f"Ex.: {amostra}"
+        logger.warning(
+            "Dependência Pessoa_MG: %s linha(s) com CPF/CNPJ não cadastrado (ex.: %s) — importação segue (Flag=0)",
+            total, amostra,
         )
+        return
 
     logger.info("Dependência Pessoa_MG: todos os CPF/CNPJ encontrados em %s", TABELA_PESSOA_MG)
 
@@ -471,9 +472,11 @@ def validar_staging_depende_pessoa_mg(cursor, tabela_staging):
             faltantes += 1
 
     if faltantes:
-        raise RuntimeError(
-            f"{faltantes} registro(s) em {tabela_staging} com CPF/CNPJ ausente em {TABELA_PESSOA_MG}. "
-            "Importe o cadastro principal (1 Forn_cli.txt) antes deste layout."
+        # Não aborta a carga: linhas órfãs seguem e tendem a Flag=0 / Ocorrencia.
+        logger.warning(
+            "%s registro(s) em %s com CPF/CNPJ ausente em %s — importação segue (Flag=0)",
+            faltantes, tabela_staging, TABELA_PESSOA_MG,
         )
+        return
 
     logger.info("Staging %s validada contra %s", tabela_staging, TABELA_PESSOA_MG)

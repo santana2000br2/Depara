@@ -86,7 +86,11 @@ def normalizar_texto_campo(valor):
         return ''
     if not isinstance(valor, str):
         valor = str(valor)
-    return re.sub(r'[\x00-\x1f\x7f]', '', valor).strip()
+    valor = re.sub(r'[\x00-\x1f\x7f]', '', valor).strip()
+    # Resíduo de § UTF-8 lido como ANSI (C2 fica como Â no fim do campo)
+    if valor.endswith('Â'):
+        valor = valor[:-1].rstrip()
+    return valor
 
 
 def processar_email(valor_str):
@@ -921,15 +925,42 @@ def _splitar_por_separador(linha_texto, sep):
     return [normalizar_texto_campo(c) for c in campos]
 
 
+def _corrigir_utf8_lido_como_ansi(texto):
+    """UTF-8 lido como ANSI/Latin-1 transforma § (C2 A7) em Â§ — o Â gruda no campo (ex.: 24Â)."""
+    if not texto:
+        return texto
+    if 'Â§' in texto:
+        texto = texto.replace('Â§', '§')
+    return texto
+
+
+def decodificar_bytes_arquivo(raw):
+    """Decodifica o arquivo: UTF-8 primeiro; se falhar, Windows-1252 / Latin-1."""
+    if raw is None:
+        return ''
+    if isinstance(raw, str):
+        return _corrigir_utf8_lido_como_ansi(raw)
+    if raw.startswith(b'\xef\xbb\xbf'):
+        return raw.decode('utf-8-sig')
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError:
+        pass
+    for enc in ('cp1252', 'latin-1'):
+        try:
+            return _corrigir_utf8_lido_como_ansi(raw.decode(enc))
+        except UnicodeDecodeError:
+            continue
+    return _corrigir_utf8_lido_como_ansi(raw.decode('latin-1', errors='replace'))
+
+
 def _decodificar_arquivo(arquivo):
     if hasattr(arquivo, 'seek'):
         arquivo.seek(0)
     elif hasattr(arquivo, 'stream') and hasattr(arquivo.stream, 'seek'):
         arquivo.stream.seek(0)
     raw = arquivo.read()
-    if isinstance(raw, bytes):
-        return raw.decode('latin-1', errors='replace')
-    return str(raw)
+    return decodificar_bytes_arquivo(raw)
 
 
 def _splitar_linha_arquivo(linha_texto, sep_preferido=None):
@@ -1004,7 +1035,7 @@ def _juntar_linhas_fisicas(linhas_fisicas, sep=None):
     return buffer
 
 
-def _escolher_corte_registro(campos, min_campos, max_campos):
+def _escolher_corte_registro(campos, min_campos, max_campos, tamanhos_completos=None):
     """
     Define onde cortar quando há mais campos que o layout permite.
 
@@ -1012,13 +1043,21 @@ def _escolher_corte_registro(campos, min_campos, max_campos):
     (CPF/CNPJ ou chassi). Caso contrário retorna None — o registro extra deve
     ser criticado como "colunas a mais", não virar uma linha fantasma incompleta.
     """
+    candidatos = []
+    for tam in (tamanhos_completos or ()):
+        if tam not in candidatos:
+            candidatos.append(tam)
     for tam in (min_campos, max_campos):
+        if tam not in candidatos:
+            candidatos.append(tam)
+    # Do maior para o menor: prefere o registro mais completo antes do próximo CPF
+    for tam in sorted((t for t in candidatos if t), reverse=True):
         if len(campos) > tam and _campo_parece_inicio_registro(campos[tam]):
             return tam
     return None
 
 
-def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas):
+def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas, tamanhos_completos=None):
     """
     Monta registros a partir de linhas físicas.
 
@@ -1032,9 +1071,15 @@ def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas):
     # Tolera até 2 campos vazios finais (arquivo costuma omitir trailing §).
     min_campos = max(1, num_colunas_esperadas - 2)
     max_campos = num_colunas_esperadas
+    tamanhos_completos = tuple(tamanhos_completos or ())
     sep_arquivo = _separador_dominante_texto('\n'.join(linhas_fisicas))
     resultado = []
     buffer_text = ''
+
+    def _linha_completa(n):
+        if tamanhos_completos:
+            return n in tamanhos_completos
+        return min_campos <= n <= max_campos
 
     for ln in linhas_fisicas:
         if not ln.strip():
@@ -1048,11 +1093,8 @@ def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas):
         ):
             campos_buffer = _splitar_linha_arquivo(buffer_text, sep_preferido=sep_arquivo)
             # Já há conteúdo no buffer e a nova linha inicia outro registro:
-            # fecha o buffer (mesmo com menos campos que o ideal).
-            if campos_buffer and len(campos_buffer) < min_campos:
-                resultado.append(campos_buffer)
-                buffer_text = ''
-            elif campos_buffer and min_campos <= len(campos_buffer) <= max_campos:
+            # fecha o buffer (telefone com 13 campos / 4 fones não deve juntar com a próxima).
+            if campos_buffer:
                 resultado.append(campos_buffer)
                 buffer_text = ''
 
@@ -1060,13 +1102,15 @@ def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas):
         campos = _splitar_linha_arquivo(buffer_text, sep_preferido=sep_arquivo)
 
         while True:
-            if min_campos <= len(campos) <= max_campos:
+            if _linha_completa(len(campos)):
                 resultado.append(campos)
                 buffer_text = ''
                 campos = []
                 break
             if len(campos) > max_campos:
-                split_at = _escolher_corte_registro(campos, min_campos, max_campos)
+                split_at = _escolher_corte_registro(
+                    campos, min_campos, max_campos, tamanhos_completos,
+                )
                 if split_at is None:
                     # Um único registro com campos a mais (ex.: Financeiro 29 vs layout 27).
                     resultado.append(campos)
@@ -1132,13 +1176,15 @@ def _agrupar_campos_em_registros(todos_campos, num_colunas_esperadas):
     return registros
 
 
-def _ler_arquivo_layout(arquivo, num_colunas_esperadas=None):
+def _ler_arquivo_layout(arquivo, num_colunas_esperadas=None, tamanhos_completos=None):
     """Lê o arquivo (separador § ou ?) — cada linha física vira registro quando completa."""
     texto = _decodificar_arquivo(arquivo)
     linhas_fisicas = [ln for ln in re.split(r'[\r\n]+', texto) if ln.strip()]
 
     if num_colunas_esperadas and _texto_usa_separador_campo(texto):
-        linhas_campos = _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas)
+        linhas_campos = _registros_de_linhas_fisicas(
+            linhas_fisicas, num_colunas_esperadas, tamanhos_completos=tamanhos_completos,
+        )
         sep = _separador_dominante_texto(texto)
         linhas_texto = [sep.join(campos) for campos in linhas_campos]
         return linhas_texto, linhas_campos
@@ -1190,11 +1236,15 @@ def _erros_estrutura_linhas(linhas_campos, num_colunas_layout):
 
 
 def _erros_estrutura_linhas_telefone(linhas_campos, num_base, num_max, eh_telefone=True):
-    """Estrutura do telefone: permite grupos extras de 3 até num_max."""
-    from utils.importacao_forn_cli_telefone import INSTRUCAO_TELEFONE
+    """Estrutura do telefone: 4/7/10/13/16 campos (1 a 5 telefones)."""
+    from utils.importacao_forn_cli_telefone import (
+        INSTRUCAO_TELEFONE,
+        TELEFONE_TAMANHOS_VALIDOS,
+        tamanho_telefone_valido,
+    )
 
     erros = []
-    min_aceitavel = max(1, num_base - 2)
+    min_aceitavel = min(TELEFONE_TAMANHOS_VALIDOS)
     for linha_idx, campos in enumerate(linhas_campos):
         num = len(campos)
         linha_num = linha_idx + 1
@@ -1207,13 +1257,14 @@ def _erros_estrutura_linhas_telefone(linhas_campos, num_base, num_max, eh_telefo
                     + INSTRUCAO_TELEFONE
                 ),
             })
-        elif num > num_base and (num - num_base) % 3 != 0:
+        elif not tamanho_telefone_valido(num, num_max):
             erros.append({
                 'Linha': linha_num,
                 'Coluna': '(estrutura)',
                 'Erro': (
-                    f"Linha com {num} campos — extras de telefone devem ser grupos de 3 "
-                    "(DDD_FONEn, NUMERO_FONEn, TIPO_FONEn). "
+                    f"Linha com {num} campos — telefone deve ter "
+                    f"{', '.join(str(t) for t in TELEFONE_TAMANHOS_VALIDOS)} "
+                    "campos (CPF/CNPJ + grupos de 3: DDD, NUMERO, TIPO). "
                     + INSTRUCAO_TELEFONE
                 ),
             })
@@ -1223,7 +1274,7 @@ def _erros_estrutura_linhas_telefone(linhas_campos, num_base, num_max, eh_telefo
                 'Coluna': '(estrutura)',
                 'Erro': (
                     f"Linha com {num} campos — layout espera pelo menos {min_aceitavel} "
-                    f"(base {num_base})."
+                    f"(CPF/CNPJ + 1 telefone)."
                 ),
             })
     return erros
@@ -1261,6 +1312,8 @@ def validar_arquivo_com_layout(
             expandir_colunas_telefone,
             validar_extras_telefone,
             INSTRUCAO_TELEFONE,
+            TELEFONE_TAMANHOS_VALIDOS,
+            tamanho_telefone_valido,
         )
         eh_telefone = layout_eh_forn_cli_telefone(
             layout_nome, layout_descricao, colunas_ordenadas,
@@ -1272,8 +1325,12 @@ def validar_arquivo_com_layout(
             colunas_efetivas = colunas_ordenadas
             num_colunas_max = num_colunas_layout
 
-        # Para telefone: lê até o máximo (FONE5); demais layouts usam o tamanho cadastrado
-        linhas_texto, linhas_campos = _ler_arquivo_layout(arquivo, num_colunas_max)
+        # Telefone: 4/7/10/13/16 campos são registros completos (não juntar duas linhas).
+        linhas_texto, linhas_campos = _ler_arquivo_layout(
+            arquivo,
+            num_colunas_max,
+            tamanhos_completos=TELEFONE_TAMANHOS_VALIDOS if eh_telefone else None,
+        )
         if not linhas_campos:
             return None, None, pd.DataFrame(), "Arquivo vazio ou sem linhas válidas."
 
@@ -1282,20 +1339,35 @@ def validar_arquivo_com_layout(
         min_cols_arquivo = min(contagens)
         aviso_colunas_preenchidas = ''
 
-        if eh_telefone and max_cols_arquivo > num_colunas_layout:
-            erro_tel = validar_extras_telefone(
-                num_colunas_layout, max_cols_arquivo, num_colunas_max,
-            )
-            if erro_tel:
-                return None, None, pd.DataFrame(), erro_tel
-            # Usa só as colunas efetivamente presentes (+ grupos extras válidos)
-            colunas_efetivas = colunas_efetivas[:max_cols_arquivo]
-            num_colunas_usar = max_cols_arquivo
-            aviso_colunas_preenchidas = (
-                f" Layout telefone: arquivo com {max_cols_arquivo} colunas "
-                f"(layout base {num_colunas_layout}; extras de telefone aceitos). "
-                + INSTRUCAO_TELEFONE
-            )
+        if eh_telefone:
+            if max_cols_arquivo > num_colunas_max:
+                erro_tel = validar_extras_telefone(
+                    num_colunas_layout, max_cols_arquivo, num_colunas_max,
+                )
+                if erro_tel:
+                    return None, None, pd.DataFrame(), erro_tel
+            if tamanho_telefone_valido(max_cols_arquivo, num_colunas_max):
+                num_colunas_usar = max(max_cols_arquivo, num_colunas_layout)
+                num_colunas_usar = min(num_colunas_usar, num_colunas_max)
+                colunas_efetivas = colunas_efetivas[:num_colunas_usar]
+                n_fones = max(0, (max_cols_arquivo - 1) // 3)
+                extras = max(0, max_cols_arquivo - num_colunas_layout)
+                aviso_colunas_preenchidas = (
+                    f" Layout telefone: arquivo com {max_cols_arquivo} colunas "
+                    f"({n_fones} telefone(s); layout-base {num_colunas_layout}"
+                    + (f" + {extras} extra(s) FONE4/FONE5" if extras else "")
+                    + "). "
+                )
+            elif max_cols_arquivo > num_colunas_layout:
+                erro_tel = validar_extras_telefone(
+                    num_colunas_layout, max_cols_arquivo, num_colunas_max,
+                )
+                return None, None, pd.DataFrame(), erro_tel or (
+                    f"O arquivo possui {max_cols_arquivo} colunas. " + INSTRUCAO_TELEFONE
+                )
+            else:
+                num_colunas_usar = num_colunas_layout
+                colunas_efetivas = colunas_ordenadas
         elif max_cols_arquivo > num_colunas_layout:
             return None, None, pd.DataFrame(), diagnosticar_divergencia_colunas(
                 max_cols_arquivo, layout_colunas,
@@ -1502,6 +1574,8 @@ def validar_arquivo_com_layout(
                         processado[linha_idx][col_idx] = valor_convertido
 
         df_processado = pd.DataFrame(processado, columns=nomes_colunas, dtype=str).fillna('')
+        from utils.importacao_forn_cli import _deduplicar_colunas_dataframe
+        df_processado = _deduplicar_colunas_dataframe(df_processado)
         logger.info(
             "Validação células concluída: %s linhas, %s aviso(s) até aqui",
             total_linhas, len(avisos),

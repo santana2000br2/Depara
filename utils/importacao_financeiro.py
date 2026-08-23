@@ -23,10 +23,49 @@ FINANCEIRO_COLUNAS_CHAVE = frozenset({
     'CPF_CNPJ', 'TIPO_MOVFINANCEIRO', 'CNPJ_EMPRESA', 'TITULO_VALOR', 'TITULO_SALDO',
 })
 
+# Colunas que as procedures De/Para leem em Titulo_MG (podem faltar no layout do cliente).
+COLUNAS_TITULO_MG_DEPARA = [
+    ('AGENTECOBRADOR_CODIGO', 'VARCHAR(MAX) NULL'),
+    ('AGENTECOBRADOR_DESCRICAO', 'VARCHAR(MAX) NULL'),
+    ('CONTAGERENCIAL_CODIGO', 'VARCHAR(MAX) NULL'),
+    ('CONTAGERENCIAL_DESCRICAO', 'VARCHAR(MAX) NULL'),
+    ('TIPOTITULO_CODIGO', 'VARCHAR(MAX) NULL'),
+    ('TIPOTITULO_DESCRICAO', 'VARCHAR(MAX) NULL'),
+    ('DEPARTAMENTO_CODIGO', 'VARCHAR(MAX) NULL'),
+    ('DEPARTAMENTO_DESCRICAO', 'VARCHAR(MAX) NULL'),
+    ('NATUREZAOPERACAO_CODIGO', 'VARCHAR(MAX) NULL'),
+    ('NATUREZAOPERACAO_DESCRICAO', 'VARCHAR(MAX) NULL'),
+    ('CODIGO_BANCO', 'VARCHAR(MAX) NULL'),
+    ('CODIGO_AGENCIA', 'VARCHAR(MAX) NULL'),
+    ('CODIGO_CONTACORRENTE', 'VARCHAR(MAX) NULL'),
+]
+
+COLUNAS_CONTAGERENCIAL_DEPARA_EXTRA = [
+    ('ContaGerencial_Tipo', 'CHAR(1) NULL'),
+    ('ContaGerencial_Nivel', 'CHAR(1) NULL'),
+]
+
 TIPO_LAYOUT = 'financeiro'
 _cfg = obter_config_procedure(TIPO_LAYOUT) or {}
 TABELA_STAGING = _cfg.get('staging', 'Arquivo_Financeiro_Tratado')
 TABELA_DESTINO = _cfg.get('destino', 'Titulo_MG')
+
+
+def _garantir_colunas_depara_financeiro(cursor, banco_gx):
+    """Garante colunas usadas pelas procedures De/Para (Titulo_MG + ContaGerencial_DePara)."""
+    from utils.importacao_forn_cli import garantir_colunas_extra, _tabela_existe
+
+    garantir_colunas_extra(
+        cursor, banco_gx,
+        tabela_destino=TABELA_DESTINO,
+        colunas_extra=COLUNAS_TITULO_MG_DEPARA,
+    )
+    if _tabela_existe(cursor, 'ContaGerencial_DePara'):
+        garantir_colunas_extra(
+            cursor, banco_gx,
+            tabela_destino='ContaGerencial_DePara',
+            colunas_extra=COLUNAS_CONTAGERENCIAL_DEPARA_EXTRA,
+        )
 
 
 def layout_eh_financeiro(nome_layout, descricao=None, colunas=None):
@@ -108,8 +147,15 @@ def importar_financeiro_para_base(df, banco_gx, banco_wf=None):
         colunas_df = [c for c in df.columns if c not in ('IDtabela', 'Flag')]
         garantir_tabela_staging(cursor, banco_gx, colunas_df, TABELA_STAGING)
         total_inserido = inserir_staging(cursor, banco_gx, df, TABELA_STAGING)
+        # Persiste a staging antes da procedure (sp_executesql / legado).
+        conn.commit()
 
         executar_procedure_extracao(cursor, TIPO_LAYOUT, banco_gx, banco_wf)
+        # Persiste Titulo_MG antes do De/Para (evita perder o destino no rollback).
+        conn.commit()
+
+        _garantir_colunas_depara_financeiro(cursor, banco_gx)
+        conn.commit()
 
         from utils.importacao_depara_procedures import executar_depara_pos_importacao
         resumo_depara = executar_depara_pos_importacao(cursor, TIPO_LAYOUT, banco_gx, banco_wf)
