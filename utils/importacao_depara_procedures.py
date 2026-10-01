@@ -214,6 +214,13 @@ DEPARA_POR_LAYOUT = {
             'tabelas': [('Banco_DePara', 'Banco_Codigo')],
         },
     ],
+    'adiantamento': [
+        {
+            'procedure': 'up_01_Adiantamento_DePara_TipoFichaRazao',
+            'chave': 'tipo_ficha_razao',
+            'tabelas': [('TipoFichaRazao_DePara', 'TipoFichaRazao_Codigo')],
+        },
+    ],
 }
 
 
@@ -248,6 +255,19 @@ def _stats_tabela_depara(cursor, tabela, col_codigo):
     }
 
 
+def _ajustar_timeout_conexao(cursor, segundos):
+    """pyodbc expõe timeout na conexão, não no cursor."""
+    conn = getattr(cursor, "connection", None)
+    if conn is None or not hasattr(conn, "timeout"):
+        return None
+    anterior = conn.timeout
+    try:
+        conn.timeout = int(segundos)
+    except Exception:
+        return None
+    return anterior
+
+
 def _executar_procedure_depara(cursor, nome_procedure, banco_gx, banco_wf):
     if not procedure_existe(cursor, nome_procedure):
         raise RuntimeError(
@@ -255,14 +275,13 @@ def _executar_procedure_depara(cursor, nome_procedure, banco_gx, banco_wf):
             "Instale os scripts em procedure/depara/ no banco DadosGX."
         )
     logger.info("Executando De/Para dbo.%s (@BancoDadosGX=%s, @BancoWF=%s)", nome_procedure, banco_gx, banco_wf)
-    # Evita travar o único worker do IIS (HTTP 500 no site inteiro).
-    timeout_anterior = getattr(cursor, 'timeout', None)
+    # DISTINCT em Pessoa_MG grande (900k+) passa de 90s; timeout fica na conexão.
+    timeout_anterior = _ajustar_timeout_conexao(cursor, 3600)
     try:
-        cursor.timeout = 90
         _executar_procedure(cursor, f"EXEC dbo.{nome_procedure} ?, ?", (banco_gx, banco_wf))
     finally:
         if timeout_anterior is not None:
-            cursor.timeout = timeout_anterior
+            _ajustar_timeout_conexao(cursor, timeout_anterior)
 
 
 def executar_depara_pos_importacao(cursor, tipo_layout, banco_gx, banco_wf):
@@ -311,8 +330,13 @@ def executar_depara_pos_importacao(cursor, tipo_layout, banco_gx, banco_wf):
 
     # Marca no dashboard a data em que o bloco passou a ter De/Para disponível
     try:
-        from utils.bloco_disponivel import registrar_apos_depara
-        registrar_apos_depara(tipo_layout)
+        from db.connection import obter_projeto_id_conexao
+        from utils.bloco_disponivel import registrar_apos_depara, registrar_blocos_apos_importacao
+        projeto_id = obter_projeto_id_conexao()
+        if projeto_id:
+            registrar_blocos_apos_importacao(projeto_id, tipo_layout)
+        else:
+            registrar_apos_depara(tipo_layout)
     except Exception as exc:
         logger.warning("Não foi possível registrar data de disponibilidade do bloco: %s", exc)
 

@@ -74,10 +74,41 @@
             </div>
             <h3>{% if modo_validador %}Validar Estrutura do Arquivo{% else %}Enviar Arquivo{% endif %}</h3>
             <p>{% if modo_validador %}Valide o arquivo contra o layout selecionado (sem gravar no banco).{% else %}Faça upload de arquivos para importação com validação por layout{% endif %}</p>
+
+            {% if job_id or importacao_id %}
+            <div id="job-progress-panel" class="result-panel info-panel open"
+                 data-job-id="{{ job_id or '' }}"
+                 data-job-api="{{ job_api_url or '' }}"
+                 data-importacao-id="{{ importacao_id or '' }}"
+                 data-importacao-api="{{ importacao_status_url or '' }}"
+                 data-result-url="{{ url_for('validador_estrutura.index' if modo_validador else 'importacao.index') }}">
+                <div class="result-panel-header">
+                    <span><i class="fas fa-spinner fa-spin"></i> Arquivo recebido</span>
+                </div>
+                <div class="result-panel-body">
+                    <p id="job-progress-title" style="margin:0 0 8px;font-weight:600;">
+                        {% if importacao_id %}Importação #{{ importacao_id }}{% else %}Processando arquivo{% endif %}
+                    </p>
+                    <p id="job-progress-msg">O arquivo já foi gravado no servidor. O processamento continua em segundo plano.</p>
+                    <div class="job-progress-stats">
+                        <span id="job-progress-pct">0,0%</span>
+                        <span id="job-progress-tempo">Tempo: 0 s</span>
+                    </div>
+                    <div class="upload-chunk-bar" style="margin:6px 0 10px;">
+                        <div id="job-progress-bar-fill" class="upload-chunk-bar-fill"></div>
+                    </div>
+                    <p id="job-progress-counts" style="margin:0 0 6px;color:#334155;"></p>
+                    <p id="job-progress-state" style="margin:0;color:#64748b;font-size:0.9rem;"></p>
+                </div>
+            </div>
+            {% endif %}
             
             <!-- Formulário de Upload Integrado -->
             <div class="upload-form">
-                <form method="post" enctype="multipart/form-data" id="upload-form">
+                <form method="post" enctype="multipart/form-data" id="upload-form"
+                      data-upload-iniciar="{{ url_for(bp ~ '.api_upload_iniciar') }}"
+                      data-upload-chunk="{{ url_for(bp ~ '.api_upload_chunk') }}"
+                      data-upload-finalizar="{{ url_for(bp ~ '.api_upload_finalizar') }}">
                     <div class="form-group">
                         <label for="layout_id">Layout *</label>
                         <div class="layout-select-row">
@@ -112,6 +143,7 @@
                     <div class="form-group">
                         <label for="arquivo">Arquivo *</label>
                         <input type="file" name="arquivo" id="arquivo" class="form-control" accept=".csv,.txt" required>
+                        <small class="upload-hint">Arquivos grandes são enviados em partes automaticamente, sem estourar o limite do servidor.</small>
                     </div>
                     
                     <div class="result-panel info-panel" data-panel="info-arquivo">
@@ -128,11 +160,12 @@
                             <div><strong>Separador:</strong> § (pipeline) ou ? (legado)</div>
                             <div><strong>Encoding:</strong> UTF-8 (preferencial) ou ANSI / Windows-1252 / Latin-1</div>
                             <div><strong>Última coluna:</strong> se estiver vazia, pode omitir o § final — será preenchida automaticamente</div>
-                            <div><strong>Erros de validação:</strong> geram relatório e pedem confirmação antes de importar; linhas problemáticas tendem a Flag=0</div>
+                            <div><strong>Erros de estrutura:</strong> quantidade de posições diferente do layout — a importação é bloqueada até corrigir o arquivo</div>
+                            <div><strong>Demais erros de validação:</strong> geram relatório e pedem confirmação antes de importar; linhas problemáticas tendem a Flag=0</div>
                             {% if modo_validador %}
                             <div><strong>Modo:</strong> apenas validação de estrutura — não importa para o banco</div>
                             {% else %}
-                            <div><strong>Importação:</strong> sem erros, importa automaticamente; com erros, avisa e só importa após confirmação</div>
+                            <div><strong>Importação:</strong> sem erros, importa automaticamente; com erro de estrutura, bloqueia; com outros erros, avisa e só importa após confirmação</div>
                             {% endif %}
                             <div><strong>Datas:</strong> remove letras e textos (NT, N/A, S/N, NULL, etc.); converte formatos válidos; inválidas ficam vazias</div>
                             <div><strong>E-mail inválido:</strong> gera aviso e campo vazio — não impede a importação</div>
@@ -144,9 +177,16 @@
                         <i class="fas fa-{% if modo_validador %}search{% else %}cog{% endif %}"></i>
                         {% if modo_validador %}Validar Estrutura{% else %}Validar e Importar{% endif %}
                     </button>
+                    <div id="upload-chunk-progress" class="upload-chunk-progress" hidden>
+                        <div class="upload-chunk-bar" aria-hidden="true">
+                            <div id="upload-chunk-bar-fill" class="upload-chunk-bar-fill"></div>
+                        </div>
+                        <p id="upload-chunk-msg">Enviando arquivo...</p>
+                    </div>
                 </form>
             </div>
         </div>
+    </div>
 
         <!-- Modal: Visualizar Layout (sempre disponível, fora do bloco de resultados) -->
         <div class="import-modal-overlay" id="modal-layout-view" hidden>
@@ -217,7 +257,9 @@
                         Resultado do processamento
                     </span>
                     <span class="result-panel-summary">
-                        {{ layout }} · {{ total_erros }} erro(s) · {{ total_avisos|default(0) }} aviso(s)
+                        {{ layout }}
+                        · {{ "{:,}".format(total_erros|int).replace(",", ".") }} erro(s)
+                        · {{ "{:,}".format(total_avisos|default(0)|int).replace(",", ".") }} aviso(s)
                     </span>
                     <i class="fas fa-chevron-down result-panel-icon"></i>
                 </button>
@@ -238,15 +280,58 @@
                             <i class="fas fa-tag" style="color: {% if modo_validador %}#0d9488{% else %}#007bff{% endif %};"></i>
                             <strong>Layout:</strong> {{ layout }}
                         </div>
+                        {% if total_linhas|default(0) %}
+                        <div class="process-info-item">
+                            <i class="fas fa-list-ol" style="color: #2563eb;"></i>
+                            <strong>Registros:</strong> {{ "{:,}".format(total_linhas|int).replace(",", ".") }}
+                        </div>
+                        {% endif %}
                         <div class="process-info-item">
                             <i class="fas fa-exclamation-triangle" style="color: {% if total_erros == 0 %}#28a745{% else %}#dc3545{% endif %};"></i>
-                            <strong>Erros:</strong> {{ total_erros }}
+                            <strong>Erros:</strong> {{ "{:,}".format(total_erros|int).replace(",", ".") }}
                         </div>
                         <div class="process-info-item">
                             <i class="fas fa-info-circle" style="color: {% if total_avisos|default(0) == 0 %}#28a745{% else %}#f59e0b{% endif %};"></i>
-                            <strong>Avisos:</strong> {{ total_avisos|default(0) }}
+                            <strong>Avisos:</strong> {{ "{:,}".format(total_avisos|default(0)|int).replace(",", ".") }}
                         </div>
+                        {% if tempo_processamento %}
+                        <div class="process-info-item">
+                            <i class="fas fa-clock" style="color: #0f766e;"></i>
+                            <strong>Tempo:</strong> {{ tempo_processamento }}
+                        </div>
+                        {% endif %}
                     </div>
+                    {% if mensagem_validacao %}
+                    <p class="resultado-mensagem">{{ mensagem_validacao }}</p>
+                    {% endif %}
+                    {% if amostra_erros %}
+                    <div class="results-erros-amostra">
+                        <table class="compact-table">
+                            <thead>
+                                <tr>
+                                    <th>Linha</th>
+                                    <th>Coluna</th>
+                                    <th>Erro</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for err in amostra_erros %}
+                                <tr class="error-row">
+                                    <td>{{ err.Linha }}</td>
+                                    <td>{{ err.Coluna }}</td>
+                                    <td>{{ err.Erro }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% if total_erros > amostra_erros|length %}
+                        <p class="results-erros-mais">
+                            Exibindo {{ amostra_erros|length }} de {{ "{:,}".format(total_erros|int).replace(",", ".") }}.
+                            Use “Ver Erros e Avisos” para o restante.
+                        </p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                     <div class="export-buttons">
                         {% if modo_validador %}
                         <button type="button" class="btn-export btn-export-preview" id="btn-abrir-preview"
@@ -321,6 +406,34 @@
                                 {% endif %}
                             </div>
                             {% endif %}
+                            {% if importacao_ultimo_resultado.soma_estoque %}
+                            <div style="margin-top:12px;font-size:0.9rem;">
+                                <strong>Soma por CNPJ e estoque</strong>
+                                <span style="color:#555;"> · {{ importacao_ultimo_resultado.total|default(0) }} linha(s) importada(s)</span>
+                                <div style="max-height:280px;overflow:auto;margin-top:8px;">
+                                    <table class="table table-sm" style="width:100%;border-collapse:collapse;">
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align:left;padding:4px 8px;">CNPJ empresa</th>
+                                                <th style="text-align:left;padding:4px 8px;">Estoque</th>
+                                                <th style="text-align:right;padding:4px 8px;">Quantidade</th>
+                                                <th style="text-align:right;padding:4px 8px;">Preço médio</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in importacao_ultimo_resultado.soma_estoque %}
+                                            <tr>
+                                                <td style="padding:4px 8px;">{{ item.cnpj_empresa }}</td>
+                                                <td style="padding:4px 8px;">{{ item.estoque_codigo }}</td>
+                                                <td style="padding:4px 8px;text-align:right;">{{ item.quantidade_total }}</td>
+                                                <td style="padding:4px 8px;text-align:right;">{{ item.preco_medio_total }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            {% endif %}
                             {% if importacao_ultimo_resultado.depara_texto %}
                             <div style="margin-top:10px;font-size:0.9rem;">
                                 <strong>Gerado o De/Para</strong>
@@ -364,6 +477,7 @@
                 </div>
             </div>
             {% endif %}
+        </div>
 
         <!-- Modal: Confirmar importação com erros -->
         {% if aguardando_confirmacao_importacao and process_id %}
@@ -481,7 +595,6 @@
                 </div>
             </div>
         </div>
-        </div>
 
         <!-- Modal: Motivos dos rejeitados -->
         <div class="import-modal-overlay" id="modal-flag0" hidden>
@@ -551,7 +664,6 @@
         </div>
         {% endif %}
         {% endif %}
-    </div>
 </div>
 
 <style>
@@ -796,10 +908,71 @@
     box-shadow: none;
 }
 
+.upload-hint {
+    display: block;
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 0.8rem;
+    line-height: 1.35;
+}
+
+.upload-chunk-progress {
+    margin-top: 14px;
+}
+
+.upload-chunk-bar {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.upload-chunk-bar-fill {
+    height: 100%;
+    width: 0;
+    background: #2563eb;
+    transition: width 0.2s ease;
+}
+
+.modo-validador .upload-chunk-bar-fill {
+    background: #0d9488;
+}
+
+.upload-chunk-progress p {
+    margin: 8px 0 0;
+    color: #475569;
+    font-size: 0.85rem;
+}
+
+.job-progress-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin: 10px 0 4px;
+}
+
+#job-progress-pct {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #1d4ed8;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+
+#job-progress-tempo {
+    color: #334155;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
 /* Estilos para a seção de resultados */
 .results-container {
-    margin-top: 30px;
-    grid-column: 1 / -1;
+    max-width: 980px;
+    width: 100%;
+    margin: 24px auto 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
 .result-panel {
@@ -823,6 +996,46 @@
     text-align: left;
     font-family: inherit;
     transition: background 0.2s ease;
+    flex-wrap: wrap;
+}
+
+.result-panel-summary {
+    flex: 1;
+    font-size: 0.85rem;
+    color: #6c757d;
+    min-width: 0;
+    white-space: normal;
+}
+
+.resultado-mensagem {
+    margin: 0 0 16px;
+    color: #334155;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    text-align: left;
+}
+
+.results-erros-amostra {
+    margin: 0 0 18px;
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+}
+
+.results-erros-amostra .compact-table {
+    margin: 0;
+}
+
+.results-erros-mais {
+    margin: 8px 10px 10px;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.import-base-alert,
+.import-base-body .alert {
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .result-panel-toggle:hover {
@@ -837,15 +1050,6 @@
     color: #2c3e50;
     font-size: 0.95rem;
     flex-shrink: 0;
-}
-
-.result-panel-summary {
-    flex: 1;
-    font-size: 0.85rem;
-    color: #6c757d;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .result-panel-badge {
@@ -900,6 +1104,7 @@
     gap: 8px;
     transition: all 0.3s ease;
     min-width: 200px;
+    max-width: 100%;
     justify-content: center;
     font-family: inherit;
     font-size: inherit;
@@ -1815,6 +2020,136 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     })();
     
+    function formatarMb(bytes) {
+        return (bytes / (1024 * 1024)).toFixed(1).replace('.', ',');
+    }
+
+    function atualizarProgressoEnvio(pct, msg) {
+        const box = document.getElementById('upload-chunk-progress');
+        const fill = document.getElementById('upload-chunk-bar-fill');
+        const msgEl = document.getElementById('upload-chunk-msg');
+        if (box) box.hidden = false;
+        if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        if (msgEl && msg) msgEl.textContent = msg;
+    }
+
+    function restaurarBotaoEnvio() {
+        processButton.disabled = false;
+        processButton.classList.remove('processing');
+        processButton.innerHTML = '{% if modo_validador %}<i class="fas fa-search"></i> Validar Estrutura{% else %}<i class="fas fa-cog"></i> Validar e Importar{% endif %}';
+        updateProcessButton();
+    }
+
+    function lerJsonResposta(resp) {
+        return resp.text().then(function(txt) {
+            var data = {};
+            try { data = txt ? JSON.parse(txt) : {}; } catch (e) { data = {}; }
+            return { ok: resp.ok, status: resp.status, data: data };
+        });
+    }
+
+    function enviarBlob(url, formData, tentativas) {
+        tentativas = tentativas || 3;
+        return fetch(url, { method: 'POST', body: formData, credentials: 'same-origin' })
+            .then(lerJsonResposta)
+            .then(function(res) {
+                if (res.ok && res.data && res.data.ok) return res.data;
+                var erro = (res.data && res.data.erro) || ('Falha no envio (HTTP ' + res.status + ').');
+                if (res.status >= 500 && tentativas > 1) {
+                    return enviarBlob(url, formData, tentativas - 1);
+                }
+                throw new Error(erro);
+            });
+    }
+
+    function enviarArquivoEmPartes(form) {
+        const file = arquivoInput.files[0];
+        const layoutId = layoutSelect.value;
+        if (!file || !layoutId) return;
+
+        const maxBytes = 1073741824;
+        if (file.size > maxBytes) {
+            alert('Arquivo maior que 1 GB. Divida-o antes de enviar.');
+            return;
+        }
+
+        const iniciarUrl = form.getAttribute('data-upload-iniciar');
+        const chunkUrl = form.getAttribute('data-upload-chunk');
+        const finalizarUrl = form.getAttribute('data-upload-finalizar');
+        if (!iniciarUrl || !chunkUrl || !finalizarUrl) {
+            form.submit();
+            return;
+        }
+
+        processButton.disabled = true;
+        processButton.classList.add('processing');
+        processButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando arquivo...';
+        atualizarProgressoEnvio(1, 'Preparando envio de ' + formatarMb(file.size) + ' MB...');
+
+        fetch(iniciarUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ filename: file.name, tamanho: file.size, layout_id: layoutId })
+        })
+        .then(lerJsonResposta)
+        .then(function(res) {
+            if (!res.ok || !res.data || !res.data.ok) {
+                throw new Error((res.data && res.data.erro) || 'Não foi possível iniciar o envio.');
+            }
+            const uploadId = res.data.upload_id;
+            const chunkSize = res.data.chunk_size || (8 * 1024 * 1024);
+            const totalChunks = res.data.total_chunks || Math.ceil(file.size / chunkSize);
+            let indice = 0;
+
+            function proximaParte() {
+                if (indice >= totalChunks) {
+                    atualizarProgressoEnvio(99, 'Montando arquivo no servidor...');
+                    return fetch(finalizarUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ upload_id: uploadId, layout_id: layoutId })
+                    })
+                    .then(lerJsonResposta)
+                    .then(function(fim) {
+                        if (!fim.ok || !fim.data || !fim.data.ok) {
+                            throw new Error((fim.data && fim.data.erro) || 'Falha ao iniciar a validação.');
+                        }
+                        atualizarProgressoEnvio(100, 'Arquivo enviado. Iniciando validação...');
+                        window.location = fim.data.redirect;
+                    });
+                }
+
+                const inicio = indice * chunkSize;
+                const fimByte = Math.min(inicio + chunkSize, file.size);
+                const blob = file.slice(inicio, fimByte);
+                const fd = new FormData();
+                fd.append('upload_id', uploadId);
+                fd.append('indice', String(indice));
+                fd.append('chunk', blob, file.name + '.part' + indice);
+                const pct = Math.round((indice / totalChunks) * 98);
+                atualizarProgressoEnvio(
+                    pct,
+                    'Enviando parte ' + (indice + 1) + ' de ' + totalChunks +
+                    ' (' + formatarMb(fimByte) + ' / ' + formatarMb(file.size) + ' MB)'
+                );
+                const atual = indice;
+                return enviarBlob(chunkUrl, fd).then(function() {
+                    indice = atual + 1;
+                    return proximaParte();
+                });
+            }
+
+            return proximaParte();
+        })
+        .catch(function(err) {
+            atualizarProgressoEnvio(0, err.message || 'Falha no envio.');
+            alert(err.message || 'Falha no envio do arquivo.');
+            restaurarBotaoEnvio();
+        });
+    }
+
     function updateProcessButton() {
         const fileSelected = arquivoInput.files.length > 0;
         const layoutSelected = layoutSelect.value !== '';
@@ -1832,11 +2167,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     arquivoInput.addEventListener('change', updateProcessButton);
     layoutSelect.addEventListener('change', updateProcessButton);
-    
-    document.getElementById('upload-form').addEventListener('submit', function() {
-        processButton.disabled = true;
-        processButton.classList.add('processing');
-        processButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% if modo_validador %}Validando...{% else %}Validando e importando...{% endif %}';
+
+    document.getElementById('upload-form').addEventListener('submit', function(ev) {
+        ev.preventDefault();
+        enviarArquivoEmPartes(this);
     });
     
     // Feedback inicial
@@ -2233,6 +2567,190 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     })();
     {% endif %}
+
+    (function pollJob() {
+        const panel = document.getElementById('job-progress-panel');
+        if (!panel) return;
+        const apiJob = panel.getAttribute('data-job-api');
+        const apiImp = panel.getAttribute('data-importacao-api');
+        const resultBase = panel.getAttribute('data-result-url') || '';
+        const msgEl = document.getElementById('job-progress-msg');
+        const stateEl = document.getElementById('job-progress-state');
+        const countsEl = document.getElementById('job-progress-counts');
+        const tempoEl = document.getElementById('job-progress-tempo');
+        const pctEl = document.getElementById('job-progress-pct');
+        const fillEl = document.getElementById('job-progress-bar-fill');
+        const headerSpan = panel.querySelector('.result-panel-header span');
+        let inicioEpoch = null;
+        let tempoFinal = null;
+        let relogio = null;
+        let lastPct = 0;
+
+        function formatarInt(n) {
+            n = Number(n || 0);
+            return n.toLocaleString('pt-BR');
+        }
+
+        function formatarPct(pct) {
+            return Number(pct || 0).toFixed(1).replace('.', ',') + '%';
+        }
+
+        function aplicarPercentual(pct) {
+            if (pct == null || pct === '' || isNaN(Number(pct))) {
+                pct = lastPct;
+            }
+            pct = Math.max(0, Math.min(100, Number(pct)));
+            lastPct = pct;
+            if (fillEl) fillEl.style.width = pct + '%';
+            if (pctEl) pctEl.textContent = formatarPct(pct);
+            return pct;
+        }
+
+        function formatarDuracao(segundos) {
+            segundos = Math.max(0, Math.floor(Number(segundos || 0)));
+            const h = Math.floor(segundos / 3600);
+            const m = Math.floor((segundos % 3600) / 60);
+            const s = segundos % 60;
+            const pad = function(n) { return String(n).padStart(2, '0'); };
+            if (h) return h + ' h ' + pad(m) + ' min ' + pad(s) + ' s';
+            if (m) return m + ' min ' + pad(s) + ' s';
+            return s + ' s';
+        }
+
+        function mostrarTempo() {
+            if (!tempoEl) return;
+            if (tempoFinal != null) {
+                tempoEl.textContent = 'Tempo: ' + formatarDuracao(tempoFinal);
+                return;
+            }
+            if (inicioEpoch) {
+                const agora = Math.floor(Date.now() / 1000);
+                tempoEl.textContent = 'Tempo: ' + formatarDuracao(agora - inicioEpoch);
+                return;
+            }
+            tempoEl.textContent = 'Tempo: 0 s';
+        }
+
+        function aplicarTempo(d, encerrado) {
+            if (d.inicio_epoch) inicioEpoch = Number(d.inicio_epoch);
+            if (encerrado && d.tempo_processamento_segundos != null) {
+                tempoFinal = Number(d.tempo_processamento_segundos);
+            }
+            if (encerrado && relogio) {
+                clearInterval(relogio);
+                relogio = null;
+            }
+            mostrarTempo();
+        }
+
+        if (!relogio) relogio = setInterval(mostrarTempo, 1000);
+
+        function aplicarImportacao(d) {
+            const pct = aplicarPercentual(d.percentual);
+            if (stateEl) {
+                stateEl.textContent = (d.status || 'PROCESSANDO') + ' · ' + formatarPct(pct);
+            }
+            if (msgEl && d.mensagem) msgEl.textContent = d.mensagem;
+            if (countsEl) {
+                const total = Number(d.total_registros || 0);
+                const proc = Number(d.registros_processados || 0);
+                const imp = Number(d.registros_importados || 0);
+                const err = Number(d.registros_com_erro || 0);
+                let txt = '';
+                if (total) txt += formatarInt(proc) + ' / ' + formatarInt(total) + ' registros';
+                else if (proc) txt += formatarInt(proc) + ' registros processados';
+                if (imp) txt += (txt ? ' · ' : '') + 'Importados: ' + formatarInt(imp);
+                if (err) txt += (txt ? ' · ' : '') + 'Com erro: ' + formatarInt(err);
+                countsEl.textContent = txt;
+            }
+            const status = (d.status || '').toUpperCase();
+            const encerrado = status === 'CONCLUIDO' || status === 'CONCLUIDO_COM_ERROS'
+                || status === 'ERRO' || status === 'CANCELADO';
+            aplicarTempo(d, encerrado);
+            if (status === 'CONCLUIDO' || status === 'CONCLUIDO_COM_ERROS') {
+                if (headerSpan) headerSpan.innerHTML = '<i class="fas fa-check-circle"></i> Importação concluída';
+                if (d.process_id) {
+                    const sep = resultBase.indexOf('?') >= 0 ? '&' : '?';
+                    window.location = resultBase + sep + 'process_id=' + encodeURIComponent(d.process_id);
+                    return true;
+                }
+            }
+            if (status === 'ERRO' || status === 'CANCELADO') {
+                if (headerSpan) headerSpan.innerHTML = '<i class="fas fa-times-circle"></i> Importação não concluída';
+                const detalhe = (d.mensagem_erro || d.mensagem || 'Ocorreu um erro durante o processamento.').trim();
+                if (msgEl) msgEl.textContent = detalhe;
+                if (stateEl) {
+                    stateEl.textContent = /tabela oficial não foi alterada/i.test(detalhe)
+                        ? (d.status || 'ERRO') + ' · ' + formatarPct(pct)
+                        : 'A tabela oficial não foi alterada.';
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function tick() {
+            const req = apiImp
+                ? fetch(apiImp, { credentials: 'same-origin' })
+                : fetch(apiJob, { credentials: 'same-origin' });
+            req.then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+                .then(function(res) {
+                    if (!res.ok) {
+                        if (msgEl) msgEl.textContent = (res.data && (res.data.erro || res.data.mensagem)) || 'Não foi possível consultar o processamento.';
+                        return;
+                    }
+                    const d = res.data || {};
+                    if (apiImp) {
+                        if (aplicarImportacao(d)) return;
+                        if (apiJob) {
+                            fetch(apiJob, { credentials: 'same-origin' })
+                                .then(function(r) { return r.json(); })
+                                .then(function(j) {
+                                    if (j && j.state === 'done' && j.process_id) {
+                                        const sep = resultBase.indexOf('?') >= 0 ? '&' : '?';
+                                        window.location = resultBase + sep + 'process_id=' + encodeURIComponent(j.process_id);
+                                        return;
+                                    }
+                                    if (j && j.state === 'error') {
+                                        if (headerSpan) headerSpan.innerHTML = '<i class="fas fa-times-circle"></i> Importação não concluída';
+                                        if (msgEl) msgEl.textContent = j.mensagem || 'Falha na validação.';
+                                        if (stateEl) stateEl.textContent = 'A tabela oficial não foi alterada.';
+                                        return;
+                                    }
+                                    if (j && j.mensagem && msgEl) msgEl.textContent = j.mensagem;
+                                    if (j && j.percentual != null) aplicarPercentual(j.percentual);
+                                    aplicarTempo(j, j && (j.state === 'done' || j.state === 'error'));
+                                    setTimeout(tick, 2500);
+                                })
+                                .catch(function() { setTimeout(tick, 4000); });
+                            return;
+                        }
+                        setTimeout(tick, 2500);
+                        return;
+                    }
+                    if (msgEl && d.mensagem) msgEl.textContent = d.mensagem;
+                    if (d.percentual != null) aplicarPercentual(d.percentual);
+                    if (stateEl) {
+                        stateEl.textContent = (d.mensagem || d.state || '') + ' · ' + formatarPct(lastPct);
+                    }
+                    aplicarTempo(d, d.state === 'done' || d.state === 'error');
+                    if (d.state === 'done' && d.process_id) {
+                        const sep = resultBase.indexOf('?') >= 0 ? '&' : '?';
+                        window.location = resultBase + sep + 'process_id=' + encodeURIComponent(d.process_id);
+                        return;
+                    }
+                    if (d.state === 'error') {
+                        if (headerSpan) headerSpan.innerHTML = '<i class="fas fa-times-circle"></i> Importação não concluída';
+                        if (msgEl) msgEl.textContent = d.mensagem || 'Falha na validação.';
+                        if (stateEl) stateEl.textContent = 'A tabela oficial não foi alterada.';
+                        return;
+                    }
+                    setTimeout(tick, 2500);
+                })
+                .catch(function() { setTimeout(tick, 4000); });
+        }
+        tick();
+    })();
 });
 </script>
 {% endblock %}

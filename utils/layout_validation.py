@@ -1,11 +1,47 @@
 # Arquivo utils/layout_validation.py corrigido
+import csv
+import gc
+import os
+import shutil
+import tempfile
 import pandas as pd
 import logging
 from datetime import datetime
 import numpy as np
 import re
+from itertools import chain
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('auth')
+
+# Arquivos grandes (100+ MB) viram várias cópias em memória (texto + campos + DataFrame + avisos).
+# Limitar o detalhe evita HTTP 500 por esgotamento de memória no worker IIS.
+MAX_DETALHES_ERRO = 50000
+MAX_DETALHES_AVISO = 20000
+MAX_CHAVES_DUPLICIDADE = 250000
+
+
+class _ColetorLimitado:
+    """Lista com teto: conta todos os itens, mas guarda só os primeiros N."""
+
+    __slots__ = ('max_itens', 'itens', 'total')
+
+    def __init__(self, max_itens):
+        self.max_itens = max_itens
+        self.itens = []
+        self.total = 0
+
+    def add(self, item):
+        self.total += 1
+        if len(self.itens) < self.max_itens:
+            self.itens.append(item)
+
+    def extend(self, itens):
+        for item in itens:
+            self.add(item)
+
+    @property
+    def truncado(self):
+        return self.total > len(self.itens)
 
 # Caracteres permitidos em datas após limpeza (dígitos + separadores comuns)
 _REGEX_LIXO_DATA = re.compile(r'[^\d/.\-: ]')
@@ -120,7 +156,37 @@ def processar_email(valor_str):
 
 
 def _ordenar_colunas_layout(layout_colunas):
-    return sorted(layout_colunas, key=lambda c: int(c.get('Posicao') or 0))
+    def _posicao(coluna):
+        if isinstance(coluna, dict):
+            return int(coluna.get('Posicao') or 0)
+        return 0
+    return sorted(layout_colunas or [], key=_posicao)
+
+
+def _deduplicar_colunas_por_posicao(layout_colunas):
+    """
+    Uma posição no arquivo = uma coluna no layout.
+
+    Cadastros com linhas duplicadas em LayoutColunas (mesmo Posicao) inflavam
+    o tamanho esperado (ex.: 26 definições, última posição 16) e faziam o
+    parser juntar duas linhas de 16 campos em um registro de 32.
+    """
+    ordenadas = _ordenar_colunas_layout(layout_colunas)
+    vistas = set()
+    unicas = []
+    for coluna in ordenadas:
+        posicao = int(coluna.get('Posicao') or 0)
+        chave = posicao if posicao > 0 else id(coluna)
+        if chave in vistas:
+            continue
+        vistas.add(chave)
+        unicas.append(coluna)
+    return unicas
+
+
+def _num_colunas_esperadas_layout(layout_colunas):
+    """Largura do arquivo: uma coluna por Posicao única (não a quantidade de linhas cadastradas)."""
+    return len(_deduplicar_colunas_por_posicao(layout_colunas))
 
 
 def _formatar_tipo_coluna(coluna):
@@ -135,8 +201,8 @@ def diagnosticar_divergencia_colunas(num_colunas_arquivo, layout_colunas):
     Monta mensagem detalhada quando a quantidade de colunas do arquivo
     difere do layout, indicando quais colunas faltam ou sobram.
     """
-    colunas_ordenadas = _ordenar_colunas_layout(layout_colunas)
-    num_colunas_layout = len(colunas_ordenadas)
+    colunas_ordenadas = _deduplicar_colunas_por_posicao(layout_colunas)
+    num_colunas_layout = _num_colunas_esperadas_layout(colunas_ordenadas)
 
     linhas = [
         f"O arquivo possui {num_colunas_arquivo} colunas, mas o layout espera {num_colunas_layout} colunas."
@@ -496,6 +562,18 @@ def _layout_eh_financeiro_colunas(layout_colunas):
     )
 
 
+def _layout_eh_adiantamento_colunas(layout_colunas):
+    nomes = _nomes_colunas_layout(layout_colunas)
+    return (
+        'TIPO_FICHARAZAO' in nomes
+        and 'VALOR_SALDO' in nomes
+        and 'CPF_CNPJ' in nomes
+        and 'CNPJ_EMPRESA' in nomes
+        and 'TITULO_VALOR' not in nomes
+        and 'TITULO_SALDO' not in nomes
+    )
+
+
 def _indices_por_descricao(colunas_ordenadas, chaves):
     indices = {}
     for idx, col in enumerate(colunas_ordenadas):
@@ -517,6 +595,18 @@ def _regras_migracao_layout(layout_colunas):
             'nomes': nomes,
             'cpf_fallback_indice_0': False,
             'mensagem_erros': 'CPF/CNPJ, CNPJ empresa, data ou movimento faltando no arquivo',
+        }
+    if _layout_eh_adiantamento_colunas(colunas_ordenadas):
+        nomes = {
+            'CPF_CNPJ', 'CNPJ_EMPRESA', 'TIPO_MOVFINANCEIRO',
+            'TIPO_FICHARAZAO', 'VALOR_SALDO', 'DATA_MOVIMENTO',
+        }
+        return {
+            'tipo': 'adiantamento',
+            'indices': _indices_por_descricao(colunas_ordenadas, nomes),
+            'nomes': nomes,
+            'cpf_fallback_indice_0': False,
+            'mensagem_erros': 'CPF/CNPJ, CNPJ empresa, tipo ficha razão, valor saldo ou colunas faltando',
         }
     if _layout_eh_financeiro_colunas(colunas_ordenadas):
         nomes = {'CPF_CNPJ', 'CNPJ_EMPRESA', 'TIPO_MOVFINANCEIRO', 'TITULO_SALDO'}
@@ -665,7 +755,7 @@ def _cpf_migracao_linha(campos, regras=None):
     return any(_cpf_preenchido_migracao(c) for c in candidatos)
 
 
-def _validar_campos_obrigatorios_migracao(linhas_campos, layout_colunas):
+def _validar_campos_obrigatorios_migracao(linhas_campos, layout_colunas, limite=None):
     """
     Erros bloqueantes por layout:
     - Forn_cli: Nome (campo 2) e CPF/CNPJ (campo 4)
@@ -681,16 +771,28 @@ def _validar_campos_obrigatorios_migracao(linhas_campos, layout_colunas):
         return erros
 
     for linha_idx, campos in enumerate(linhas_campos):
+        if limite is not None and len(erros) >= limite:
+            break
         linha_num = linha_idx + 1
 
         if 'NOME' in indices:
             idx_nome = indices['NOME']
-            nome = normalizar_texto_campo(campos[idx_nome] if len(campos) > idx_nome else '')
+            nome_bruto = campos[idx_nome] if len(campos) > idx_nome else ''
+            nome = normalizar_texto_campo(nome_bruto)
             if not nome:
+                codigo = normalizar_texto_campo(campos[0] if campos else '')
+                cpf_extra = normalizar_texto_campo(
+                    campos[3] if len(campos) > 3 else ''
+                )
                 erros.append({
                     'Linha': linha_num,
                     'Coluna': rotulos['NOME'],
-                    'Erro': 'Nome obrigatório para migração (campo 2) não preenchido',
+                    'Erro': (
+                        "Nome obrigatório para migração (campo 2) não preenchido "
+                        "(vazio ou só espaços). "
+                        f"CODIGO_PESSOA='{codigo or '(vazio)'}', "
+                        f"CPF/CNPJ='{cpf_extra or '(vazio)'}'"
+                    ),
                 })
 
         if 'CPF_CNPJ' in indices:
@@ -826,6 +928,44 @@ def _validar_campos_obrigatorios_migracao(linhas_campos, layout_colunas):
                     ),
                 })
 
+        if 'TIPO_MOVFINANCEIRO' in indices:
+            idx = indices['TIPO_MOVFINANCEIRO']
+            valor = normalizar_texto_campo(campos[idx] if len(campos) > idx else '').upper()
+            if valor not in ('R', 'P'):
+                lido = normalizar_texto_campo(campos[idx] if len(campos) > idx else '') or '(vazio)'
+                erros.append({
+                    'Linha': linha_num,
+                    'Coluna': rotulos['TIPO_MOVFINANCEIRO'],
+                    'Erro': (
+                        f"TIPO_MOVFINANCEIRO obrigatório para migração (campo {idx + 1}) "
+                        f"deve ser R ou P (valor lido: '{lido}')"
+                    ),
+                })
+
+        if 'TIPO_FICHARAZAO' in indices:
+            idx = indices['TIPO_FICHARAZAO']
+            valor = normalizar_texto_campo(campos[idx] if len(campos) > idx else '')
+            if not valor:
+                erros.append({
+                    'Linha': linha_num,
+                    'Coluna': rotulos['TIPO_FICHARAZAO'],
+                    'Erro': (
+                        f"Tipo da ficha razão obrigatório para migração (campo {idx + 1}) não preenchido"
+                    ),
+                })
+
+        if 'VALOR_SALDO' in indices:
+            idx = indices['VALOR_SALDO']
+            valor = normalizar_texto_campo(campos[idx] if len(campos) > idx else '')
+            if not valor:
+                erros.append({
+                    'Linha': linha_num,
+                    'Coluna': rotulos['VALOR_SALDO'],
+                    'Erro': (
+                        f"Valor saldo obrigatório para migração (campo {idx + 1}) não preenchido"
+                    ),
+                })
+
         if 'NUMERO_OS' in indices:
             idx = indices['NUMERO_OS']
             valor = normalizar_texto_campo(campos[idx] if len(campos) > idx else '')
@@ -859,7 +999,7 @@ def _chave_duplicidade_produto(campos, indices):
     return referencia, descricao, marca, cnpj
 
 
-def _validar_duplicidade_produto(linhas_campos, layout_colunas):
+def _validar_duplicidade_produto(linhas_campos, layout_colunas, limite=None):
     """
     Duplicidade no arquivo: mesma Referência + Descrição + Marca + CNPJ empresa.
     Mantém a 1ª ocorrência; demais linhas geram erro bloqueante.
@@ -883,14 +1023,17 @@ def _validar_duplicidade_produto(linhas_campos, layout_colunas):
 
         linha_num = linha_idx + 1
         if chave in primeira_linha:
-            erros.append({
-                'Linha': linha_num,
-                'Coluna': 'PRODUTO_REFERENCIA',
-                'Erro': (
-                    'Registro duplicado: mesma Referência, Descrição, Marca e CNPJ da empresa '
-                    f"da linha {primeira_linha[chave]}."
-                ),
-            })
+            if limite is None or len(erros) < limite:
+                erros.append({
+                    'Linha': linha_num,
+                    'Coluna': 'PRODUTO_REFERENCIA',
+                    'Erro': (
+                        'Registro duplicado: mesma Referência, Descrição, Marca e CNPJ da empresa '
+                        f"da linha {primeira_linha[chave]}."
+                    ),
+                })
+            if limite is not None and len(erros) >= limite:
+                break
         else:
             primeira_linha[chave] = linha_num
 
@@ -916,6 +1059,27 @@ def _separador_dominante_texto(texto):
         if sep in texto:
             return sep
     return SEPARADORES_ARQUIVO[0]
+
+
+def _texto_item_linha(item):
+    """Aceita linha crua ou par (numero_fisico, texto)."""
+    if isinstance(item, tuple) and len(item) == 2:
+        return item[1]
+    return item
+
+
+def _numero_item_linha(item, n_seq):
+    if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], int):
+        return item[0], item[1]
+    return n_seq, item
+
+
+def _separador_dominante_linhas(linhas, max_linhas=500):
+    """Detecta o separador só na amostra — evita juntar o arquivo inteiro em RAM."""
+    if not linhas:
+        return SEPARADORES_ARQUIVO[0]
+    amostra = [_texto_item_linha(x) for x in linhas[:max_linhas]]
+    return _separador_dominante_texto('\n'.join(amostra))
 
 
 def _splitar_por_separador(linha_texto, sep):
@@ -960,7 +1124,9 @@ def _decodificar_arquivo(arquivo):
     elif hasattr(arquivo, 'stream') and hasattr(arquivo.stream, 'seek'):
         arquivo.stream.seek(0)
     raw = arquivo.read()
-    return decodificar_bytes_arquivo(raw)
+    texto = decodificar_bytes_arquivo(raw)
+    del raw
+    return texto
 
 
 def _splitar_linha_arquivo(linha_texto, sep_preferido=None):
@@ -1004,6 +1170,39 @@ def _campo_parece_chassi_ou_codigo_veiculo(valor):
     return False
 
 
+def _parece_inicio_forn_cli_em(campos, idx=0):
+    """
+    Início de Forn_cli: CPF/CNPJ no campo 1 *ou* CODIGO_PESSOA + NOME + (TIPO F/J e/ou CPF no campo 4).
+
+    O campo 1 do arquivo oficial é CODIGO_PESSOA (ex.: 529890208, 9 dígitos), não o CPF.
+    Sem isso o parser cola a linha no registro anterior e o Nome some da posição 2.
+    """
+    if idx >= len(campos):
+        return False
+    if _campo_parece_codigo_pessoa(campos[idx]):
+        return True
+    nome = campos[idx + 1] if idx + 1 < len(campos) else ''
+    if not re.search(r'[A-Za-zÀ-ÿ]', normalizar_texto_campo(nome)):
+        return False
+    tipo = normalizar_texto_campo(campos[idx + 2] if idx + 2 < len(campos) else '').upper()
+    cpf = campos[idx + 3] if idx + 3 < len(campos) else ''
+    if _campo_parece_codigo_pessoa(cpf):
+        return True
+    if tipo in ('F', 'J'):
+        codigo = re.sub(r'\D', '', normalizar_texto_campo(campos[idx]))
+        return bool(codigo) and len(codigo) <= 20
+    return False
+
+
+def _parece_inicio_registro_em(campos, idx=0):
+    """Início de registro no índice idx (Forn_cli por código/nome/CPF ou Veículo por chassi)."""
+    if idx >= len(campos):
+        return False
+    if _parece_inicio_forn_cli_em(campos, idx):
+        return True
+    return _campo_parece_chassi_ou_codigo_veiculo(campos[idx])
+
+
 def _campo_parece_inicio_registro(valor):
     """Detecta início de um novo registro (Forn_cli por CPF/CNPJ ou Veículo por chassi)."""
     return _campo_parece_codigo_pessoa(valor) or _campo_parece_chassi_ou_codigo_veiculo(valor)
@@ -1025,7 +1224,7 @@ def _juntar_linha_texto(buffer, linha, sep=None):
 
 def _juntar_linhas_fisicas(linhas_fisicas, sep=None):
     """Une linhas físicas reinserindo o separador quando a quebra cortou entre campos."""
-    sep = sep or _separador_dominante_texto('\n'.join(linhas_fisicas))
+    sep = sep or _separador_dominante_linhas(linhas_fisicas)
     buffer = ''
     for ln in linhas_fisicas:
         if not buffer:
@@ -1050,60 +1249,67 @@ def _escolher_corte_registro(campos, min_campos, max_campos, tamanhos_completos=
     for tam in (min_campos, max_campos):
         if tam not in candidatos:
             candidatos.append(tam)
-    # Do maior para o menor: prefere o registro mais completo antes do próximo CPF
+    # Do maior para o menor: prefere o registro mais completo antes do próximo CPF/código
     for tam in sorted((t for t in candidatos if t), reverse=True):
-        if len(campos) > tam and _campo_parece_inicio_registro(campos[tam]):
+        if len(campos) > tam and _parece_inicio_registro_em(campos, tam):
             return tam
     return None
 
 
-def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas, tamanhos_completos=None):
-    """
-    Monta registros a partir de linhas físicas.
+def _iterar_registros_de_linhas(linhas_iter, num_colunas_esperadas, tamanhos_completos=None):
+    """Gera registros a partir de linhas físicas, sem guardar o arquivo inteiro na RAM."""
+    it = iter(linhas_iter)
+    peek = []
+    for _ in range(80):
+        try:
+            peek.append(next(it))
+        except StopIteration:
+            break
 
-    - Uma linha completa (ex.: Endereco com 12 campos) = um registro.
-    - Linhas incompletas são acumuladas até formar um registro (Forn_cli quebrado).
-    - Se a próxima linha física já começa um novo registro (CPF/chassi), o buffer
-      atual é fechado mesmo que faltem 1–2 campos finais vazios (comum em Veículo).
-    - Vários registros na mesma linha são separados quando o próximo inicia com CPF/chassi.
-    - Sobras sem início de registro válido NÃO são cortadas (evita "linha com 2 campos").
-    """
-    # Tolera até 2 campos vazios finais (arquivo costuma omitir trailing §).
+    sep_arquivo = _separador_dominante_linhas(peek) if peek else SEPARADORES_ARQUIVO[0]
+    linhas_iter = chain(peek, it)
+
     min_campos = max(1, num_colunas_esperadas - 2)
     max_campos = num_colunas_esperadas
     tamanhos_completos = tuple(tamanhos_completos or ())
-    sep_arquivo = _separador_dominante_texto('\n'.join(linhas_fisicas))
-    resultado = []
     buffer_text = ''
+    n_seq = 0
+    n_registro = 0
 
     def _linha_completa(n):
         if tamanhos_completos:
             return n in tamanhos_completos
         return min_campos <= n <= max_campos
 
-    for ln in linhas_fisicas:
-        if not ln.strip():
+    for item in linhas_iter:
+        n_seq += 1
+        n_ln, ln = _numero_item_linha(item, n_seq)
+        if not str(ln).strip():
             continue
 
         campos_nova = _splitar_linha_arquivo(ln, sep_preferido=sep_arquivo)
-        if (
-            buffer_text
-            and campos_nova
-            and _campo_parece_inicio_registro(campos_nova[0])
-        ):
+        if buffer_text and campos_nova:
             campos_buffer = _splitar_linha_arquivo(buffer_text, sep_preferido=sep_arquivo)
-            # Já há conteúdo no buffer e a nova linha inicia outro registro:
-            # fecha o buffer (telefone com 13 campos / 4 fones não deve juntar com a próxima).
-            if campos_buffer:
-                resultado.append(campos_buffer)
+            inicio_novo = _parece_inicio_registro_em(campos_nova, 0)
+            nova_completa = _linha_completa(len(campos_nova))
+            join_dobraria = (
+                not tamanhos_completos
+                and len(campos_buffer) == len(campos_nova) > 1
+                and (len(campos_buffer) + len(campos_nova)) > max_campos
+            )
+            # Não cola um Forn_cli completo (CODIGO+NOME+…) no registro anterior.
+            if campos_buffer and (inicio_novo or join_dobraria or nova_completa):
+                yield n_registro, campos_buffer
                 buffer_text = ''
 
+        if not buffer_text:
+            n_registro = n_ln
         buffer_text = _juntar_linha_texto(buffer_text, ln, sep=sep_arquivo) if buffer_text else ln
         campos = _splitar_linha_arquivo(buffer_text, sep_preferido=sep_arquivo)
 
         while True:
             if _linha_completa(len(campos)):
-                resultado.append(campos)
+                yield n_registro, campos
                 buffer_text = ''
                 campos = []
                 break
@@ -1112,13 +1318,13 @@ def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas, tamanhos
                     campos, min_campos, max_campos, tamanhos_completos,
                 )
                 if split_at is None:
-                    # Um único registro com campos a mais (ex.: Financeiro 29 vs layout 27).
-                    resultado.append(campos)
+                    yield n_registro, campos
                     buffer_text = ''
                     campos = []
                     break
-                resultado.append(campos[:split_at])
+                yield n_registro, campos[:split_at]
                 campos = campos[split_at:]
+                n_registro = n_ln
                 buffer_text = sep_arquivo.join(campos) if campos else ''
                 continue
             break
@@ -1127,9 +1333,103 @@ def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas, tamanhos
             buffer_text = sep_arquivo.join(campos)
 
     if buffer_text.strip():
-        resultado.append(_splitar_linha_arquivo(buffer_text, sep_preferido=sep_arquivo))
+        yield n_registro, _splitar_linha_arquivo(buffer_text, sep_preferido=sep_arquivo)
 
-    return resultado
+
+def _registros_de_linhas_fisicas(linhas_fisicas, num_colunas_esperadas, tamanhos_completos=None):
+    """Compat: materializa a lista (só para arquivos pequenos / testes)."""
+    return [
+        campos
+        for _, campos in _iterar_registros_de_linhas(
+            linhas_fisicas, num_colunas_esperadas, tamanhos_completos=tamanhos_completos,
+        )
+    ]
+
+
+def _detectar_encoding_arquivo(path):
+    with open(path, 'rb') as f:
+        head = f.read(262144)
+    if head.startswith(b'\xef\xbb\xbf'):
+        return 'utf-8-sig'
+    try:
+        head.decode('utf-8')
+        return 'utf-8'
+    except UnicodeDecodeError:
+        return 'cp1252'
+
+
+def _materializar_upload(arquivo):
+    """Copia o upload para disco (1 MB por vez) — não faz arquivo.read() na RAM.
+
+    Retorna (path, temporario). Se o stream já for um arquivo em disco (job
+    em segundo plano), reutiliza o caminho e não apaga no finally.
+    """
+    stream = arquivo.stream if hasattr(arquivo, 'stream') else arquivo
+    existente = getattr(stream, 'name', None)
+    if existente and isinstance(existente, (str, os.PathLike)) and os.path.isfile(existente):
+        if hasattr(stream, 'seek'):
+            try:
+                stream.seek(0)
+            except Exception:
+                pass
+        return str(existente), False
+    fd, path = tempfile.mkstemp(prefix='depara_up_', suffix='.txt')
+    os.close(fd)
+    if hasattr(stream, 'seek'):
+        try:
+            stream.seek(0)
+        except Exception:
+            pass
+    with open(path, 'wb') as out:
+        shutil.copyfileobj(stream, out, length=1024 * 1024)
+    return path, True
+
+
+def _iterar_linhas_disco(path, encoding):
+    """Lê o arquivo em blocos. Se não houver quebra de linha (arquivo § contínuo),
+    corta no último separador para não carregar 100+ MB numa string só."""
+    max_buf = 512 * 1024
+    n_fisica = 0
+    with open(path, 'r', encoding=encoding, errors='replace', newline='') as f:
+        buf = ''
+        while True:
+            chunk = f.read(256 * 1024)
+            if not chunk:
+                break
+            buf += _corrigir_utf8_lido_como_ansi(chunk)
+            while True:
+                i = buf.find('\n')
+                if i >= 0:
+                    n_fisica += 1
+                    ln = buf[:i].rstrip('\r')
+                    buf = buf[i + 1:]
+                    if ln.strip():
+                        yield n_fisica, ln
+                    continue
+                if len(buf) >= max_buf:
+                    cut = -1
+                    for sep in SEPARADORES_ARQUIVO:
+                        cut = max(cut, buf.rfind(sep))
+                    if cut > 0:
+                        yield n_fisica or 1, buf[:cut + 1]
+                        buf = buf[cut + 1:]
+                    else:
+                        yield n_fisica or 1, buf
+                        buf = ''
+                break
+        if buf.strip():
+            yield (n_fisica + 1), buf.rstrip('\r\n')
+
+
+def _iterar_arquivo_layout(path, encoding, num_colunas_esperadas=None, tamanhos_completos=None):
+    linhas = _iterar_linhas_disco(path, encoding)
+    if num_colunas_esperadas:
+        yield from _iterar_registros_de_linhas(
+            linhas, num_colunas_esperadas, tamanhos_completos=tamanhos_completos,
+        )
+        return
+    for n_ln, ln in linhas:
+        yield n_ln, _splitar_linha_arquivo(ln)
 
 
 def _extrair_todos_campos_arquivo(texto):
@@ -1163,7 +1463,7 @@ def _agrupar_campos_em_registros(todos_campos, num_colunas_esperadas):
     inicio = 0
 
     for i in range(1, total):
-        if not _campo_parece_inicio_registro(todos_campos[i]):
+        if not _parece_inicio_registro_em(todos_campos, i):
             continue
         tamanho = i - inicio
         if min_campos <= tamanho <= max_campos:
@@ -1179,19 +1479,22 @@ def _agrupar_campos_em_registros(todos_campos, num_colunas_esperadas):
 def _ler_arquivo_layout(arquivo, num_colunas_esperadas=None, tamanhos_completos=None):
     """Lê o arquivo (separador § ou ?) — cada linha física vira registro quando completa."""
     texto = _decodificar_arquivo(arquivo)
+    usa_sep = bool(num_colunas_esperadas) and _texto_usa_separador_campo(texto)
     linhas_fisicas = [ln for ln in re.split(r'[\r\n]+', texto) if ln.strip()]
+    texto = None
 
-    if num_colunas_esperadas and _texto_usa_separador_campo(texto):
+    if num_colunas_esperadas and usa_sep:
         linhas_campos = _registros_de_linhas_fisicas(
             linhas_fisicas, num_colunas_esperadas, tamanhos_completos=tamanhos_completos,
         )
-        sep = _separador_dominante_texto(texto)
-        linhas_texto = [sep.join(campos) for campos in linhas_campos]
-        return linhas_texto, linhas_campos
+        linhas_fisicas = None
+        gc.collect()
+        return linhas_campos
 
-    linhas_texto = linhas_fisicas
-    linhas_campos = [_splitar_linha_arquivo(ln) for ln in linhas_texto]
-    return linhas_texto, linhas_campos
+    linhas_campos = [_splitar_linha_arquivo(ln) for ln in linhas_fisicas]
+    linhas_fisicas = None
+    gc.collect()
+    return linhas_campos
 
 
 def _normalizar_campos_linha(campos, num_colunas_layout):
@@ -1204,7 +1507,7 @@ def _normalizar_campos_linha(campos, num_colunas_layout):
     return campos, None
 
 
-def _erros_estrutura_linhas(linhas_campos, num_colunas_layout):
+def _erros_estrutura_linhas(linhas_campos, num_colunas_layout, limite=None):
     """
     Erros bloqueantes por linha quando faltam colunas no meio do registro.
     Até 2 colunas finais do layout podem ser omitidas (comum no Veículo: trailing §).
@@ -1212,6 +1515,8 @@ def _erros_estrutura_linhas(linhas_campos, num_colunas_layout):
     erros = []
     min_aceitavel = max(1, num_colunas_layout - 2)
     for linha_idx, campos in enumerate(linhas_campos):
+        if limite is not None and len(erros) >= limite:
+            break
         num = len(campos)
         linha_num = linha_idx + 1
         if num > num_colunas_layout:
@@ -1235,7 +1540,127 @@ def _erros_estrutura_linhas(linhas_campos, num_colunas_layout):
     return erros
 
 
-def _erros_estrutura_linhas_telefone(linhas_campos, num_base, num_max, eh_telefone=True):
+def _acumular_faixa_linha(faixas, linha):
+    """Junta linhas consecutivas em faixas [inicio, fim] (1-based)."""
+    linha = int(linha)
+    if faixas and faixas[-1][1] + 1 == linha:
+        faixas[-1][1] = linha
+        return
+    faixas.append([linha, linha])
+
+
+def _texto_faixas_linhas(faixas, max_partes=40):
+    """'1, 50, 285, 1500' ou '1 a 5000' / '1 a 5, 50, 1500'."""
+    partes = []
+    ocultas = 0
+    for ini, fim in faixas:
+        if len(partes) >= max_partes:
+            ocultas += fim - ini + 1
+            continue
+        if ini == fim:
+            partes.append(str(ini))
+        else:
+            partes.append(f"{ini} a {fim}")
+    texto = ', '.join(partes)
+    if ocultas:
+        texto += f" e mais {ocultas} linha(s)"
+    return texto
+
+
+def _contar_linhas_faixas(faixas):
+    return sum(fim - ini + 1 for ini, fim in faixas)
+
+
+def _texto_qtd_campos(qtd_min, qtd_max):
+    if qtd_min is None:
+        return ''
+    if qtd_min == qtd_max:
+        return f"; encontradas {qtd_min}"
+    return f"; encontradas de {qtd_min} a {qtd_max}"
+
+
+def _montar_erro_estrutura_resumido(
+    faixas, total_linhas, num_layout, mais, qtd_min=None, qtd_max=None,
+):
+    """
+    Um erro só para divergência de colunas:
+    - arquivo inteiro / bloco contínuo → 'Da linha 1 até a 5000…'
+    - linhas sortidas → 'As linhas 1, 50, 1500, 285 têm mais posições…'
+    """
+    if not faixas:
+        return None
+    n = _contar_linhas_faixas(faixas)
+    ini0, fim0 = faixas[0][0], faixas[-1][1]
+    qtd = _texto_qtd_campos(qtd_min, qtd_max)
+    if mais:
+        problema = f"têm mais posições que o layout (espera {num_layout} colunas{qtd})"
+        problema_sg = f"tem mais posições que o layout (espera {num_layout} colunas{qtd})"
+        problema_todas = f"todas têm mais posições que o layout (espera {num_layout} colunas{qtd})"
+    else:
+        problema = (
+            f"têm menos posições que o layout (espera {num_layout} colunas{qtd}; "
+            "até duas colunas finais podem ser omitidas)"
+        )
+        problema_sg = (
+            f"tem menos posições que o layout (espera {num_layout} colunas{qtd}; "
+            "até duas colunas finais podem ser omitidas)"
+        )
+        problema_todas = (
+            f"todas têm menos posições que o layout (espera {num_layout} colunas{qtd}; "
+            "até duas colunas finais podem ser omitidas)"
+        )
+
+    cobertura_total = total_linhas > 0 and n == total_linhas
+    uma_faixa = len(faixas) == 1
+
+    if n == 1:
+        linha = faixas[0][0]
+        msg = f"A linha {linha} {problema_sg}."
+        linha_exibir = linha
+    elif cobertura_total or (uma_faixa and n >= 3):
+        ini, fim = faixas[0]
+        msg = f"Da linha {ini} até a {fim} ({n} linha(s)): {problema_todas}."
+        linha_exibir = f"{ini}–{fim}"
+    else:
+        lista = _texto_faixas_linhas(faixas)
+        msg = f"As linhas {lista} {problema}."
+        linha_exibir = lista if len(lista) <= 80 else f"{ini0}…"
+
+    return {
+        'Linha': linha_exibir,
+        'Coluna': '(estrutura)',
+        'Erro': msg,
+    }
+
+
+def _inserir_erros_no_inicio(coletor, itens):
+    """Coloca o resumo de estrutura no topo do relatório."""
+    for item in reversed(itens):
+        if not item:
+            continue
+        coletor.itens.insert(0, item)
+        coletor.total += 1
+    if len(coletor.itens) > coletor.max_itens:
+        del coletor.itens[coletor.max_itens:]
+
+
+def _coluna_eh_estrutura(valor):
+    return str(valor or '').strip().lower() == '(estrutura)'
+
+
+def tem_erro_estrutura(df_erros=None, amostra_erros=None):
+    """Divergência de quantidade de posições — bloqueia importação."""
+    if df_erros is not None and not getattr(df_erros, 'empty', True):
+        if 'Coluna' in df_erros.columns:
+            if df_erros['Coluna'].map(_coluna_eh_estrutura).any():
+                return True
+    for item in amostra_erros or []:
+        if isinstance(item, dict) and _coluna_eh_estrutura(item.get('Coluna')):
+            return True
+    return False
+
+
+def _erros_estrutura_linhas_telefone(linhas_campos, num_base, num_max, eh_telefone=True, limite=None):
     """Estrutura do telefone: 4/7/10/13/16 campos (1 a 5 telefones)."""
     from utils.importacao_forn_cli_telefone import (
         INSTRUCAO_TELEFONE,
@@ -1246,6 +1671,8 @@ def _erros_estrutura_linhas_telefone(linhas_campos, num_base, num_max, eh_telefo
     erros = []
     min_aceitavel = min(TELEFONE_TAMANHOS_VALIDOS)
     for linha_idx, campos in enumerate(linhas_campos):
+        if limite is not None and len(erros) >= limite:
+            break
         num = len(campos)
         linha_num = linha_idx + 1
         if num > num_max:
@@ -1289,9 +1716,139 @@ def _dataframe_de_linhas(linhas_campos, num_colunas_layout):
     return pd.DataFrame(rows, dtype=str).fillna('')
 
 
+def _aplicar_validacao_celulas_linha(
+    linha, linha_idx, colunas_efetivas, avisos,
+    indices_migracao, nomes_migracao, eh_movimento_estoque,
+):
+    """Aplica regras de célula em uma linha (mutação in-place)."""
+    for col_idx, coluna in enumerate(colunas_efetivas):
+        posicao_layout = int(coluna.get('Posicao') or (col_idx + 1))
+        descricao = (coluna.get('Descricao') or '').strip()
+        obrigatorio = bool(coluna.get('Obrigatorio'))
+        tipo_dado = coluna.get('TipoDado') or 'texto'
+        validacao = coluna.get('Validacao', '')
+
+        if col_idx < len(linha):
+            valor = linha[col_idx]
+        else:
+            valor = ''
+
+        valor = normalizar_texto_campo(valor)
+
+        if tipo_dado in TIPOS_SEM_LETRAS and valor:
+            valor, aviso_sanit = sanitizar_campo_numerico(valor, tipo_dado)
+            if aviso_sanit:
+                avisos.add({
+                    'Linha': linha_idx + 1,
+                    'Coluna': descricao,
+                    'Aviso': aviso_sanit
+                })
+            if not valor:
+                linha[col_idx] = ''
+
+        if tipo_dado == 'data' and valor:
+            status_data, valor_data, msg_data = processar_data(valor)
+            if msg_data:
+                avisos.add({
+                    'Linha': linha_idx + 1,
+                    'Coluna': descricao,
+                    'Aviso': msg_data
+                })
+            if status_data == 'vazio':
+                valor = ''
+                linha[col_idx] = ''
+            else:
+                valor = valor_data
+                linha[col_idx] = valor_data
+                continue
+
+        if tipo_dado == 'email' and valor:
+            status_email, valor_email, msg_email = processar_email(valor)
+            if status_email == 'erro':
+                avisos.add({
+                    'Linha': linha_idx + 1,
+                    'Coluna': descricao,
+                    'Aviso': (
+                        f"{msg_email} — definido como vazio (coluna layout posição {posicao_layout})"
+                        if msg_email else
+                        f"Email inválido — definido como vazio (coluna layout posição {posicao_layout})"
+                    ),
+                })
+                linha[col_idx] = ''
+                continue
+            if msg_email and status_email in ('vazio', 'convertido'):
+                avisos.add({
+                    'Linha': linha_idx + 1,
+                    'Coluna': descricao,
+                    'Aviso': msg_email,
+                })
+            if status_email == 'vazio':
+                valor = ''
+                linha[col_idx] = ''
+            else:
+                linha[col_idx] = valor_email
+                continue
+
+        if not valor and validacao and not validacao.startswith('#'):
+            valor_default = validacao.strip()
+            linha[col_idx] = valor_default
+            valor = valor_default
+
+        if (
+            tipo_dado == 'cpf_cnpj' and valor
+            and eh_movimento_estoque and descricao.upper() == 'CPF_CNPJ'
+            and cpf_cnpj_eh_consumidor(valor)
+        ):
+            avisos.add({
+                'Linha': linha_idx + 1,
+                'Coluna': descricao,
+                'Aviso': (
+                    f"CPF consumidor ('{valor}') — aceito na integração "
+                    "(11 zeros ou 11 noves / cupom consumidor)."
+                ),
+            })
+            linha[col_idx] = cpf_cnpj_canonico_consumidor(valor) or converter_valor(valor, tipo_dado)
+            continue
+
+        if tipo_dado == 'cpf_cnpj' and valor and cpf_cnpj_eh_placeholder(valor):
+            avisos.add({
+                'Linha': linha_idx + 1,
+                'Coluna': descricao,
+                'Aviso': (
+                    f"CPF/CNPJ '{valor}' é placeholder inválido "
+                    "(ex.: zeros ou dígitos repetidos) — definido como vazio."
+                ),
+            })
+            valor = ''
+            linha[col_idx] = ''
+
+        if obrigatorio and not valor:
+            desc_upper = descricao.upper()
+            if col_idx in indices_migracao or desc_upper in nomes_migracao:
+                continue
+            avisos.add({
+                'Linha': linha_idx + 1,
+                'Coluna': descricao,
+                'Aviso': 'Campo obrigatório no layout não preenchido — mantido vazio',
+            })
+            continue
+
+        if valor:
+            erro_validacao = validar_tipo_dado(valor, tipo_dado, validacao, descricao)
+            if erro_validacao:
+                avisos.add({
+                    'Linha': linha_idx + 1,
+                    'Coluna': descricao,
+                    'Aviso': f"{erro_validacao} — valor mantido para conferência",
+                })
+            else:
+                linha[col_idx] = converter_valor(valor, tipo_dado)
+
+
 def validar_arquivo_com_layout(
     arquivo, layout_colunas, layout_nome=None, layout_descricao=None,
     banco_gx=None, validar_dependencias_banco=True,
+    on_progress=None,
 ):
     """
     Valida um arquivo com base nas colunas do layout do banco e aplica valores default.
@@ -1299,13 +1856,24 @@ def validar_arquivo_com_layout(
     Na validação de estrutura (validar_dependencias_banco=False) gera apenas avisos informativos.
     """
     try:
+        csv_path = None
         if hasattr(arquivo, 'seek'):
             arquivo.seek(0)
         elif hasattr(arquivo, 'stream') and hasattr(arquivo.stream, 'seek'):
             arquivo.stream.seek(0)
 
-        colunas_ordenadas = _ordenar_colunas_layout(layout_colunas)
-        num_colunas_layout = len(colunas_ordenadas)
+        colunas_brutas = _ordenar_colunas_layout(layout_colunas)
+        colunas_ordenadas = _deduplicar_colunas_por_posicao(colunas_brutas)
+        num_colunas_layout = _num_colunas_esperadas_layout(colunas_ordenadas)
+        if len(colunas_brutas) != len(colunas_ordenadas):
+            logger.warning(
+                "Layout '%s': %s definições de coluna no cadastro, %s posições únicas "
+                "(esperado no arquivo: %s). Colunas duplicadas na mesma posição foram ignoradas.",
+                layout_nome or '?',
+                len(colunas_brutas),
+                len(colunas_ordenadas),
+                num_colunas_layout,
+            )
 
         from utils.importacao_forn_cli_telefone import (
             layout_eh_forn_cli_telefone,
@@ -1325,323 +1893,316 @@ def validar_arquivo_com_layout(
             colunas_efetivas = colunas_ordenadas
             num_colunas_max = num_colunas_layout
 
-        # Telefone: 4/7/10/13/16 campos são registros completos (não juntar duas linhas).
-        linhas_texto, linhas_campos = _ler_arquivo_layout(
-            arquivo,
-            num_colunas_max,
-            tamanhos_completos=TELEFONE_TAMANHOS_VALIDOS if eh_telefone else None,
-        )
-        if not linhas_campos:
-            return None, None, pd.DataFrame(), "Arquivo vazio ou sem linhas válidas."
-
-        contagens = [len(c) for c in linhas_campos]
-        max_cols_arquivo = max(contagens)
-        min_cols_arquivo = min(contagens)
         aviso_colunas_preenchidas = ''
+        if len(colunas_brutas) != len(colunas_ordenadas):
+            aviso_colunas_preenchidas = (
+                f" Layout com {len(colunas_brutas)} colunas cadastradas e "
+                f"{len(colunas_ordenadas)} posições únicas "
+                f"(última: {num_colunas_layout}); "
+                "definições duplicadas na mesma posição foram ignoradas."
+            )
 
         if eh_telefone:
-            if max_cols_arquivo > num_colunas_max:
-                erro_tel = validar_extras_telefone(
-                    num_colunas_layout, max_cols_arquivo, num_colunas_max,
-                )
-                if erro_tel:
-                    return None, None, pd.DataFrame(), erro_tel
-            if tamanho_telefone_valido(max_cols_arquivo, num_colunas_max):
-                num_colunas_usar = max(max_cols_arquivo, num_colunas_layout)
-                num_colunas_usar = min(num_colunas_usar, num_colunas_max)
-                colunas_efetivas = colunas_efetivas[:num_colunas_usar]
-                n_fones = max(0, (max_cols_arquivo - 1) // 3)
-                extras = max(0, max_cols_arquivo - num_colunas_layout)
-                aviso_colunas_preenchidas = (
-                    f" Layout telefone: arquivo com {max_cols_arquivo} colunas "
-                    f"({n_fones} telefone(s); layout-base {num_colunas_layout}"
-                    + (f" + {extras} extra(s) FONE4/FONE5" if extras else "")
-                    + "). "
-                )
-            elif max_cols_arquivo > num_colunas_layout:
-                erro_tel = validar_extras_telefone(
-                    num_colunas_layout, max_cols_arquivo, num_colunas_max,
-                )
-                return None, None, pd.DataFrame(), erro_tel or (
-                    f"O arquivo possui {max_cols_arquivo} colunas. " + INSTRUCAO_TELEFONE
-                )
-            else:
-                num_colunas_usar = num_colunas_layout
-                colunas_efetivas = colunas_ordenadas
-        elif max_cols_arquivo > num_colunas_layout:
-            return None, None, pd.DataFrame(), diagnosticar_divergencia_colunas(
-                max_cols_arquivo, layout_colunas,
+            num_colunas_usar = num_colunas_max
+            aviso_colunas_preenchidas += (
+                f" Layout telefone: até {num_colunas_max} colunas "
+                f"(layout-base {num_colunas_layout}). "
             )
         else:
             num_colunas_usar = num_colunas_layout
             colunas_efetivas = colunas_ordenadas
 
-        min_campos_aceitavel = max(1, num_colunas_layout - 2)
-        linhas_quase_completas = sum(
-            1 for n in contagens
-            if min_campos_aceitavel <= n <= num_colunas_usar
-        )
-        if linhas_quase_completas < len(linhas_campos):
-            logger.info(
-                "Arquivo: linhas com %s a %s campos; layout com %s (efetivo %s). "
-                "%s linha(s) com estrutura incompleta.",
-                min_cols_arquivo, max_cols_arquivo, num_colunas_layout, num_colunas_usar,
-                len(linhas_campos) - linhas_quase_completas,
-            )
-
-        if not aviso_colunas_preenchidas and min_campos_aceitavel <= max_cols_arquivo < num_colunas_layout:
-            aviso_colunas_preenchidas = (
-                " Coluna(s) final(is) ausente(s) em algumas linhas (sem § de fechamento) "
-                f"foram consideradas vazias (layout: {num_colunas_layout} campos)."
-            )
-        elif not aviso_colunas_preenchidas and max_cols_arquivo < min_campos_aceitavel:
-            aviso_colunas_preenchidas = (
-                f" Linhas válidas ({min_campos_aceitavel}–{num_colunas_layout} campos) foram processadas; "
-                f"linhas com menos de {min_campos_aceitavel} campos geram erro por linha."
-            )
-
-        df = _dataframe_de_linhas(linhas_campos, num_colunas_usar)
-        
-        # Renomear colunas conforme layout (inclui extras de telefone, se houver)
         nomes_colunas = [(coluna.get('Descricao') or '').strip() for coluna in colunas_efetivas]
-        df.columns = nomes_colunas
-        
-        # Validar cada coluna conforme regras do layout e aplicar defaults
-        # Estrutura: base do layout; extras de telefone só checam grupos completos (já feitos)
-        erros = _erros_estrutura_linhas_telefone(
-            linhas_campos, num_colunas_layout, num_colunas_usar, eh_telefone,
-        ) if eh_telefone else _erros_estrutura_linhas(linhas_campos, num_colunas_layout)
-        avisos = []
-        processado = df.values.tolist()
-        total_linhas = len(processado)
-        logger.info(
-            "Validação iniciada: %s linhas, %s colunas (layout=%s, efetivo=%s)",
-            total_linhas, num_colunas_layout, layout_nome or '?', num_colunas_usar,
-        )
-        log_interval = max(5000, total_linhas // 10) if total_linhas else 0
-        
+        erros = _ColetorLimitado(MAX_DETALHES_ERRO)
+        avisos = _ColetorLimitado(MAX_DETALHES_AVISO)
+
+        if layout_nome and not validar_dependencias_banco:
+            from utils.importacao_dependencia_avisos import gerar_avisos_dependencia_estrutura
+            avisos.extend(
+                gerar_avisos_dependencia_estrutura(
+                    layout_nome, layout_descricao, colunas_ordenadas,
+                )
+            )
+
         _, regras_migracao = _rotulos_campos_migracao(colunas_ordenadas)
         indices_migracao = set(regras_migracao['indices'].values())
         nomes_migracao = regras_migracao['nomes']
         eh_movimento_estoque = regras_migracao.get('tipo') == 'movimento_estoque'
+        eh_produto = _layout_eh_produto_colunas(colunas_ordenadas)
+        chaves_dup = {'PRODUTO_REFERENCIA', 'PRODUTO_DESCRICAO', 'MARCA_CODIGO', 'CNPJ_EMPRESA'}
+        indices_dup = _indices_por_descricao(colunas_ordenadas, chaves_dup) if eh_produto else {}
+        primeira_linha_dup = {}
 
-        for linha_idx, linha in enumerate(processado):
-            if log_interval and linha_idx > 0 and linha_idx % log_interval == 0:
-                logger.info(
-                    "Validação em progresso: %s/%s linhas (%.0f%%)",
-                    linha_idx, total_linhas, 100 * linha_idx / total_linhas,
-                )
-            
-            for col_idx, coluna in enumerate(colunas_efetivas):
-                posicao_layout = int(coluna.get('Posicao') or (col_idx + 1))
-                descricao = (coluna.get('Descricao') or '').strip()
-                obrigatorio = bool(coluna.get('Obrigatorio'))
-                tipo_dado = coluna.get('TipoDado') or 'texto'
-                validacao = coluna.get('Validacao', '')
+        from utils.arquivo_processado import ArquivoProcessado, CSV_SEP, CSV_ENCODING
 
-                # col_idx = coluna física no arquivo (1ª § = índice 0)
-                if col_idx < len(linha):
-                    valor = linha[col_idx]
-                else:
-                    valor = ''
+        fd_csv, csv_path = tempfile.mkstemp(prefix='depara_proc_', suffix='.csv')
+        os.close(fd_csv)
+        upload_path = None
+        upload_temporario = False
+        csv_f = None
+        total_linhas = 0
+        faixas_mais = []
+        faixas_menos = []
+        qtd_mais_min = qtd_mais_max = None
+        qtd_menos_min = qtd_menos_max = None
+        min_campos_estrutura = max(1, num_colunas_layout - 2)
+        try:
+            upload_path, upload_temporario = _materializar_upload(arquivo)
+            encoding = _detectar_encoding_arquivo(upload_path)
+            logger.info("Validação em streaming: encoding=%s layout=%s", encoding, layout_nome or '?')
+            csv_f = open(csv_path, 'w', encoding=CSV_ENCODING, newline='')
+            writer = csv.writer(csv_f, delimiter=CSV_SEP, lineterminator='\n')
+            writer.writerow(nomes_colunas)
 
-                if posicao_layout != col_idx + 1:
-                    logger.warning(
-                        "Layout '%s': Posição cadastrada (%s) difere da ordem no arquivo (%s)",
-                        descricao, posicao_layout, col_idx + 1,
+            for item in _iterar_arquivo_layout(
+                upload_path,
+                encoding,
+                num_colunas_max,
+                tamanhos_completos=TELEFONE_TAMANHOS_VALIDOS if eh_telefone else None,
+            ):
+                linha_fisica = None
+                campos = None
+                try:
+                    if isinstance(item, (list, tuple)) and len(item) == 2:
+                        linha_fisica, campos = item
+                    else:
+                        campos = item
+                    if campos is None:
+                        continue
+                    if not isinstance(campos, (list, tuple)):
+                        campos = [campos]
+                    total_linhas += 1
+                    linha_num = int(linha_fisica or total_linhas)
+                    if eh_telefone:
+                        for e in _erros_estrutura_linhas_telefone(
+                            [campos], num_colunas_layout, num_colunas_usar, eh_telefone, limite=1,
+                        ):
+                            e['Linha'] = linha_num
+                            erros.add(e)
+                    else:
+                        ncampos = len(campos)
+                        if ncampos > num_colunas_layout:
+                            _acumular_faixa_linha(faixas_mais, linha_num)
+                            qtd_mais_min = ncampos if qtd_mais_min is None else min(qtd_mais_min, ncampos)
+                            qtd_mais_max = ncampos if qtd_mais_max is None else max(qtd_mais_max, ncampos)
+                        elif ncampos < min_campos_estrutura:
+                            _acumular_faixa_linha(faixas_menos, linha_num)
+                            qtd_menos_min = ncampos if qtd_menos_min is None else min(qtd_menos_min, ncampos)
+                            qtd_menos_max = ncampos if qtd_menos_max is None else max(qtd_menos_max, ncampos)
+                    for e in _validar_campos_obrigatorios_migracao(
+                        [campos], colunas_ordenadas, limite=1,
+                    ):
+                        e['Linha'] = linha_num
+                        erros.add(e)
+                    if eh_produto and len(indices_dup) >= len(chaves_dup):
+                        chave = _chave_duplicidade_produto(campos, indices_dup)
+                        if chave:
+                            if chave in primeira_linha_dup:
+                                erros.add({
+                                    'Linha': linha_num,
+                                    'Coluna': 'PRODUTO_REFERENCIA',
+                                    'Erro': (
+                                        'Registro duplicado: mesma Referência, Descrição, Marca e CNPJ da empresa '
+                                        f"da linha {primeira_linha_dup[chave]}."
+                                    ),
+                                })
+                            elif len(primeira_linha_dup) < MAX_CHAVES_DUPLICIDADE:
+                                primeira_linha_dup[chave] = linha_num
+                    linha, _ = _normalizar_campos_linha(campos, num_colunas_usar)
+                    _aplicar_validacao_celulas_linha(
+                        linha, linha_num - 1, colunas_efetivas, avisos,
+                        indices_migracao, nomes_migracao, eh_movimento_estoque,
                     )
-                
-                valor = normalizar_texto_campo(valor)
-
-                # Campos numéricos: remove letras; sem dígitos → vazio
-                if tipo_dado in TIPOS_SEM_LETRAS and valor:
-                    valor, aviso_sanit = sanitizar_campo_numerico(valor, tipo_dado)
-                    if aviso_sanit:
-                        avisos.append({
-                            'Linha': linha_idx + 1,
-                            'Coluna': descricao,
-                            'Aviso': aviso_sanit
-                        })
-                    if not valor:
-                        processado[linha_idx][col_idx] = ''
-
-                # Datas: remove letras, converte ou define vazio se inválida
-                if tipo_dado == 'data' and valor:
-                    status_data, valor_data, msg_data = processar_data(valor)
-                    if msg_data:
-                        avisos.append({
-                            'Linha': linha_idx + 1,
-                            'Coluna': descricao,
-                            'Aviso': msg_data
-                        })
-                    if status_data == 'vazio':
-                        valor = ''
-                        processado[linha_idx][col_idx] = ''
-                    else:
-                        valor = valor_data
-                        processado[linha_idx][col_idx] = valor_data
-                        continue
-
-                # E-mail: normalizar; inválido vira aviso + vazio (não bloqueia importação)
-                if tipo_dado == 'email' and valor:
-                    status_email, valor_email, msg_email = processar_email(valor)
-                    if status_email == 'erro':
-                        avisos.append({
-                            'Linha': linha_idx + 1,
-                            'Coluna': descricao,
-                            'Aviso': (
-                                f"{msg_email} — definido como vazio (coluna layout posição {posicao_layout})"
-                                if msg_email else
-                                f"Email inválido — definido como vazio (coluna layout posição {posicao_layout})"
-                            ),
-                        })
-                        valor = ''
-                        processado[linha_idx][col_idx] = ''
-                        continue
-                    if msg_email and status_email in ('vazio', 'convertido'):
-                        avisos.append({
-                            'Linha': linha_idx + 1,
-                            'Coluna': descricao,
-                            'Aviso': msg_email,
-                        })
-                    if status_email == 'vazio':
-                        valor = ''
-                        processado[linha_idx][col_idx] = ''
-                    else:
-                        valor = valor_email
-                        processado[linha_idx][col_idx] = valor_email
-                        continue
-                
-                # Aplicar valor default se estiver vazio e houver validação como default
-                if not valor and validacao and not validacao.startswith('#'):
-                    valor_default = validacao.strip()
-                    processado[linha_idx][col_idx] = valor_default
-                    valor = valor_default
-
-                # Cupom consumidor (MovimentoEstoque): 00000000000 ou 99999999999
-                if (
-                    tipo_dado == 'cpf_cnpj' and valor
-                    and eh_movimento_estoque and descricao.upper() == 'CPF_CNPJ'
-                    and cpf_cnpj_eh_consumidor(valor)
-                ):
-                    avisos.append({
-                        'Linha': linha_idx + 1,
-                        'Coluna': descricao,
-                        'Aviso': (
-                            f"CPF consumidor ('{valor}') — aceito na integração "
-                            "(11 zeros ou 11 noves / cupom consumidor)."
-                        ),
+                    writer.writerow('' if v is None else str(v) for v in linha)
+                    if total_linhas % 10000 == 0:
+                        logger.info("Validação em progresso: %s linhas", total_linhas)
+                        csv_f.flush()
+                        if on_progress:
+                            try:
+                                on_progress(total_linhas)
+                            except Exception:
+                                pass
+                except MemoryError:
+                    raise
+                except Exception as exc:
+                    logger.exception("Falha ao validar linha física %s", linha_fisica)
+                    if total_linhas == 0:
+                        total_linhas = 1
+                    linha_num = int(linha_fisica or total_linhas)
+                    erros.add({
+                        'Linha': linha_num,
+                        'Coluna': '(validação)',
+                        'Erro': f'Não foi possível validar esta linha ({exc}).',
                     })
-                    processado[linha_idx][col_idx] = cpf_cnpj_canonico_consumidor(valor) or converter_valor(valor, tipo_dado)
-                    continue
+                    try:
+                        writer.writerow([''] * max(1, int(num_colunas_usar or 1)))
+                    except Exception:
+                        pass
+            csv_f.close()
+            csv_f = None
+        finally:
+            if csv_f is not None and not csv_f.closed:
+                csv_f.close()
+            if upload_path and upload_temporario:
+                try:
+                    os.remove(upload_path)
+                except OSError:
+                    pass
 
-                # Placeholder inválido em CPF/CNPJ → vazio
-                if tipo_dado == 'cpf_cnpj' and valor and cpf_cnpj_eh_placeholder(valor):
-                    avisos.append({
-                        'Linha': linha_idx + 1,
-                        'Coluna': descricao,
-                        'Aviso': (
-                            f"CPF/CNPJ '{valor}' é placeholder inválido "
-                            "(ex.: zeros ou dígitos repetidos) — definido como vazio."
-                        ),
-                    })
-                    valor = ''
-                    processado[linha_idx][col_idx] = ''
-                
-                # Campo obrigatório do layout (exceto Nome/CPF) → aviso, não bloqueia migração
-                if obrigatorio and not valor:
-                    desc_upper = descricao.upper()
-                    if col_idx in indices_migracao or desc_upper in nomes_migracao:
-                        continue
-                    avisos.append({
-                        'Linha': linha_idx + 1,
-                        'Coluna': descricao,
-                        'Aviso': 'Campo obrigatório no layout não preenchido — mantido vazio',
-                    })
-                    continue
+        if total_linhas == 0:
+            try:
+                os.remove(csv_path)
+            except OSError:
+                pass
+            return None, None, pd.DataFrame(), "Arquivo vazio ou sem linhas válidas."
 
-                # Tipo inválido → aviso; tenta converter quando possível
-                if valor:
-                    erro_validacao = validar_tipo_dado(valor, tipo_dado, validacao, descricao)
-                    if erro_validacao:
-                        avisos.append({
-                            'Linha': linha_idx + 1,
-                            'Coluna': descricao,
-                            'Aviso': f"{erro_validacao} — valor mantido para conferência",
-                        })
-                    else:
-                        valor_convertido = converter_valor(valor, tipo_dado)
-                        processado[linha_idx][col_idx] = valor_convertido
+        resumos_estrutura = [
+            _montar_erro_estrutura_resumido(
+                faixas_mais, total_linhas, num_colunas_layout, True,
+                qtd_mais_min, qtd_mais_max,
+            ),
+            _montar_erro_estrutura_resumido(
+                faixas_menos, total_linhas, num_colunas_layout, False,
+                qtd_menos_min, qtd_menos_max,
+            ),
+        ]
+        _inserir_erros_no_inicio(erros, resumos_estrutura)
 
-        df_processado = pd.DataFrame(processado, columns=nomes_colunas, dtype=str).fillna('')
-        from utils.importacao_forn_cli import _deduplicar_colunas_dataframe
-        df_processado = _deduplicar_colunas_dataframe(df_processado)
-        logger.info(
-            "Validação células concluída: %s linhas, %s aviso(s) até aqui",
-            total_linhas, len(avisos),
-        )
+        logger.info("Validação células concluída: %s linhas, %s aviso(s)", total_linhas, avisos.total)
+        if on_progress:
+            try:
+                on_progress(total_linhas)
+            except Exception:
+                pass
+        df_processado = ArquivoProcessado(csv_path, nomes_colunas, total_linhas)
 
-        erros.extend(_validar_campos_obrigatorios_migracao(linhas_campos, colunas_ordenadas))
-        erros.extend(_validar_duplicidade_produto(linhas_campos, colunas_ordenadas))
-
-        if layout_nome:
-            if validar_dependencias_banco:
+        if layout_nome and validar_dependencias_banco:
+            try:
+                def _iter_campos_csv():
+                    for chunk in df_processado.iter_chunks(4000):
+                        for row in chunk.itertuples(index=False, name=None):
+                            yield list(row)
                 from utils.importacao_pessoa_mg_dependencia import (
                     avisar_dependencia_pessoa_mg_opcional,
+                    layout_depende_pessoa_mg,
                     pessoa_mg_dependencia_opcional,
                     validar_dependencia_pessoa_mg,
                 )
-                from utils.importacao_produto_mg_dependencia import validar_dependencia_produto_mg
-                from utils.importacao_veiculo_mg_dependencia import validar_dependencia_veiculo_mg
-                from utils.importacao_ficha_cab_mg_dependencia import validar_dependencia_ficha_cab_mg
+                from utils.importacao_produto_mg_dependencia import (
+                    layout_depende_produto_mg,
+                    validar_dependencia_produto_mg,
+                )
+                from utils.importacao_veiculo_mg_dependencia import (
+                    layout_depende_veiculo_mg,
+                    validar_dependencia_veiculo_mg,
+                )
+                from utils.importacao_ficha_cab_mg_dependencia import (
+                    layout_depende_ficha_cab_mg,
+                    validar_dependencia_ficha_cab_mg,
+                )
                 if pessoa_mg_dependencia_opcional(layout_nome, layout_descricao, colunas_ordenadas):
                     avisos.extend(
                         avisar_dependencia_pessoa_mg_opcional(
-                            linhas_campos, colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                            _iter_campos_csv(), colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
                         )
                     )
-                else:
+                elif layout_depende_pessoa_mg(layout_nome, layout_descricao, colunas_ordenadas):
                     erros.extend(
                         validar_dependencia_pessoa_mg(
-                            linhas_campos, colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                            _iter_campos_csv(), colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
                         )
                     )
-                erros.extend(
-                    validar_dependencia_produto_mg(
-                        linhas_campos, colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                if layout_depende_produto_mg(layout_nome, layout_descricao, colunas_ordenadas):
+                    erros.extend(
+                        validar_dependencia_produto_mg(
+                            _iter_campos_csv(), colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                        )
                     )
-                )
-                erros.extend(
-                    validar_dependencia_veiculo_mg(
-                        linhas_campos, colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                if layout_depende_veiculo_mg(layout_nome, layout_descricao, colunas_ordenadas):
+                    erros.extend(
+                        validar_dependencia_veiculo_mg(
+                            _iter_campos_csv(), colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                        )
                     )
-                )
-                erros.extend(
-                    validar_dependencia_ficha_cab_mg(
-                        linhas_campos, colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                if layout_depende_ficha_cab_mg(layout_nome, layout_descricao, colunas_ordenadas):
+                    erros.extend(
+                        validar_dependencia_ficha_cab_mg(
+                            _iter_campos_csv(), colunas_ordenadas, layout_nome, layout_descricao, banco_gx,
+                        )
                     )
-                )
-            else:
-                from utils.importacao_dependencia_avisos import gerar_avisos_dependencia_estrutura
-                avisos.extend(
-                    gerar_avisos_dependencia_estrutura(
-                        layout_nome, layout_descricao, colunas_ordenadas,
-                    )
-                )
+            except MemoryError:
+                raise
+            except Exception as exc:
+                logger.exception("Falha ao validar dependências no banco")
+                erros.add({
+                    'Linha': 0,
+                    'Coluna': '(dependência)',
+                    'Erro': f'Não foi possível validar dependências no banco ({exc}).',
+                })
 
-        df_erros = pd.DataFrame(erros) if erros else pd.DataFrame()
-        df_avisos = pd.DataFrame(avisos) if avisos else pd.DataFrame()
-        
+        if erros.truncado:
+            erros.itens.append({
+                'Linha': 0,
+                'Coluna': '(resumo)',
+                'Erro': (
+                    f"Há {erros.total} erro(s) no arquivo; "
+                    f"apenas os primeiros {MAX_DETALHES_ERRO} foram mantidos na memória."
+                ),
+            })
+        if avisos.truncado:
+            avisos.itens.append({
+                'Linha': 0,
+                'Coluna': '(resumo)',
+                'Aviso': (
+                    f"Há {avisos.total} aviso(s) no arquivo; "
+                    f"apenas os primeiros {MAX_DETALHES_AVISO} foram mantidos na memória."
+                ),
+            })
+
+        df_erros = pd.DataFrame(erros.itens) if erros.itens else pd.DataFrame()
+        df_avisos = pd.DataFrame(avisos.itens) if avisos.itens else pd.DataFrame()
+        if not df_erros.empty:
+            df_erros.attrs['total'] = erros.total
+        if not df_avisos.empty:
+            df_avisos.attrs['total'] = avisos.total
+
         mensagem = "Arquivo validado com sucesso"
         if aviso_colunas_preenchidas:
             mensagem += "." + aviso_colunas_preenchidas
-        if not df_avisos.empty:
-            mensagem += f" {len(df_avisos)} aviso(s) de conversão automática (ex.: datas ou números ajustados)."
-        
+        if avisos.total:
+            mensagem += (
+                f" {avisos.total} aviso(s) de conversão automática (ex.: datas ou números ajustados)."
+            )
+            if avisos.truncado:
+                mensagem += f" Exibindo os primeiros {len(avisos.itens)} avisos."
+        if erros.truncado:
+            mensagem += (
+                f" {erros.total} erro(s) encontrados; exibindo os primeiros {len(erros.itens)}."
+            )
+
+        gc.collect()
         return df_processado, df_erros, df_avisos, mensagem
-        
+
+    except MemoryError:
+        logger.exception("Memória esgotada na validação do arquivo")
+        gc.collect()
+        try:
+            if csv_path:
+                os.remove(csv_path)
+        except Exception:
+            pass
+        return None, None, pd.DataFrame(), (
+            "O arquivo é grande demais para validar na memória deste servidor. "
+            "O processo esgotou a RAM (isso aparece como HTTP 500 no navegador). "
+            "Divida o arquivo em partes menores (por exemplo até 50 MB) e envie novamente."
+        )
     except Exception as e:
         logger.error(f"Erro na validação do arquivo: {e}")
+        try:
+            if csv_path:
+                os.remove(csv_path)
+        except Exception:
+            pass
         return None, None, pd.DataFrame(), f"Erro na validação: {str(e)}"
 
 def converter_valor(valor, tipo_dado):

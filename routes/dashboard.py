@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, session, flash, jsonify
+from flask import Blueprint, render_template, redirect, url_for, session, flash, jsonify, request
 from datetime import datetime
 import re
 from db.connection import conectar_banco, conectar_homologacao
@@ -283,6 +283,87 @@ def verificar_notificacoes():
         logger.warning(f"Verificação assíncrona de notificações ignorada: {exc}")
         return jsonify({"success": False, "message": "Falha ao verificar notificações"}), 500
 
+
+def _resposta_bloco_disponivel(sucesso, mensagem, extra=None, status=200):
+    """JSON para fetch; redirect+flash para formulário HTML."""
+    extra = extra or {}
+    ctype = (request.content_type or "")
+    quer_json = request.is_json or ctype.startswith("application/json") or (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    )
+    if quer_json:
+        corpo = {"success": sucesso, "message": mensagem}
+        corpo.update(extra)
+        return jsonify(corpo), status
+    flash(mensagem, "success" if sucesso else "error")
+    return redirect(url_for("dashboard.dashboard"))
+
+
+@dashboard_bp.route("/bloco-disponivel", methods=["POST"])
+def salvar_bloco_disponivel():
+    """Adm define a data de disponibilidade do De/Para (projetos que não são Arquivo X Workflow)."""
+    logger.info(
+        "POST /bloco-disponivel content_type=%s form=%s json=%r",
+        request.content_type,
+        dict(request.form),
+        request.get_json(silent=True),
+    )
+    if "usuario" not in session:
+        if request.is_json or (request.content_type or "").startswith("application/json"):
+            return jsonify({"success": False, "message": "Sessão expirada"}), 401
+        return redirect(url_for("auth.login"))
+
+    usuario = session.get("usuario") or {}
+    if usuario.get("adm") not in (1, True, "1"):
+        return _resposta_bloco_disponivel(False, "Apenas administradores podem alterar esta data.", status=403)
+
+    projeto = session.get("projeto_selecionado") or {}
+    from utils.projeto_acesso import projeto_eh_arquivo_workflow
+    if projeto_eh_arquivo_workflow(projeto):
+        return _resposta_bloco_disponivel(
+            False,
+            "Neste tipo de projeto a data vem da importação do layout.",
+            status=400,
+        )
+
+    payload = request.get_json(silent=True) or request.form
+    escopo = (payload.get("escopo") or "").strip().upper()
+    from utils.bloco_disponivel import BLOCOS_VALIDOS, parse_data_disponivel, salvar_data_manual
+    if escopo not in BLOCOS_VALIDOS:
+        return _resposta_bloco_disponivel(False, "Bloco inválido.", status=400)
+
+    data_recebida = payload.get("data")
+    data_dt = parse_data_disponivel(data_recebida)
+    if not data_dt:
+        logger.warning(
+            "Data inválida ao salvar bloco disponível. projeto=%s escopo=%s valor_recebido=%r",
+            projeto.get("ProjetoID"),
+            escopo,
+            data_recebida,
+        )
+        return _resposta_bloco_disponivel(
+            False,
+            "Informe uma data válida (ex.: 05/08/2026).",
+            status=400,
+        )
+
+    usuario_id = usuario.get("usuario_id") or usuario.get("UsuarioID")
+    ok = salvar_data_manual(projeto.get("ProjetoID"), escopo, data_dt, usuario_id=usuario_id)
+    if not ok:
+        return _resposta_bloco_disponivel(False, "Não foi possível salvar a data.", status=500)
+
+    data_fmt = data_dt.strftime("%d/%m/%Y")
+    return _resposta_bloco_disponivel(
+        True,
+        f"Data do bloco {escopo} gravada: {data_fmt}.",
+        extra={
+            "escopo": escopo,
+            "data": data_fmt,
+            "iso": data_dt.strftime("%Y-%m-%d"),
+        },
+    )
+
+
 def calcular_progresso_por_categoria(dados, escopos_habilitados):
     """Calcula o progresso para cada categoria habilitada"""
     progresso_categorias = {}
@@ -310,6 +391,11 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
     if progresso_categorias is None:
         progresso_categorias = {}
 
+    from utils.projeto_acesso import projeto_eh_arquivo_workflow
+    eh_arquivo_workflow = projeto_eh_arquivo_workflow(projeto_selecionado)
+    adm_flag = usuario.get("adm") if isinstance(usuario, dict) else getattr(usuario, "adm", 0)
+    pode_editar_data_bloco = adm_flag in (1, True, "1") and not eh_arquivo_workflow
+
     datas_blocos = {}
     try:
         from utils.bloco_disponivel import obter_datas_blocos
@@ -317,8 +403,17 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
         for escopo, info in datas_raw.items():
             data = info.get("DataDisponivel")
             ultima = info.get("DataUltimaImportacao")
+            origem = (info.get("OrigemData") or "importacao").lower()
+            if data and hasattr(data, "strftime"):
+                data_fmt = data.strftime("%d/%m/%Y") if origem == "manual" else data.strftime("%d/%m/%Y %H:%M")
+                data_iso = data.strftime("%Y-%m-%d")
+            else:
+                data_fmt = str(data) if data else None
+                data_iso = ""
             datas_blocos[escopo] = {
-                "data": data.strftime("%d/%m/%Y %H:%M") if data and hasattr(data, "strftime") else (str(data) if data else None),
+                "data": data_fmt,
+                "iso": data_iso,
+                "origem": origem,
                 "ultima": ultima.strftime("%d/%m/%Y %H:%M") if ultima and hasattr(ultima, "strftime") else (str(ultima) if ultima else None),
                 "layout": info.get("NomeLayout") or info.get("TipoLayout") or "",
             }
@@ -327,9 +422,8 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
 
     status_layouts_obrigatorios = None
     try:
-        from utils.projeto_acesso import projeto_eh_arquivo_workflow
         from utils.layout_importacao_projeto import obter_status_layouts_obrigatorios
-        if projeto_eh_arquivo_workflow(projeto_selecionado):
+        if eh_arquivo_workflow:
             status_layouts_obrigatorios = obter_status_layouts_obrigatorios(
                 projeto_selecionado.get("ProjetoID"),
                 escopos_habilitados,
@@ -349,6 +443,8 @@ def render_template_dashboard_com_escopo(usuario, projeto_selecionado, dados, es
         "categorias_nomes": CATEGORIAS_NOMES,
         "datas_blocos": datas_blocos,
         "status_layouts_obrigatorios": status_layouts_obrigatorios,
+        "projeto_arquivo_workflow": eh_arquivo_workflow,
+        "pode_editar_data_bloco": pode_editar_data_bloco,
         
         # Dados das categorias (usar dados reais se disponíveis, senão vazios)
         "cond_pag": dados.get("cond_pag", dados_vazios),

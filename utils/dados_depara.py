@@ -167,7 +167,7 @@ def dados_grupoproduto(banco_usuario):
 
 def dados_pessoacodfabricante(banco_usuario):
     return obter_dados_tabela(
-        banco_usuario, "PessoaCodFabricante_DePara", "PessoaCodFabricante_Codigo"
+        banco_usuario, "PessoaCodFabricante_DePara", "ProdutoMarca_PessoaCodFabricante"
     )
 
 

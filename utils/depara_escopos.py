@@ -54,6 +54,7 @@ LAYOUT_PARA_BLOCOS = {
     "fseg_prd": ("VEICULOS",),
     "fseg_srv": ("VEICULOS",),
     "financeiro": ("FINANCEIRO", "GERAL"),
+    "adiantamento": ("FINANCEIRO",),
 }
 
 

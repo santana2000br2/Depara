@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, session, request, jsonify
-from db.connection import conectar_banco
+from db.connection import conectar_banco, garantir_colunas_dadosgx
 from logger import logger
 from utils.credential_crypto import (
     criptografar_segredo,
@@ -80,6 +80,10 @@ def _projeto_para_dict(projeto):
         'usuariohomologacao': descriptografar_segredo(projeto.usuariohomologacao) or '',
         'senhahomologacao': '',
         'senhahomologacao_configurada': bool(getattr(projeto, 'senhahomologacao', None)),
+        'servidordadosgx': getattr(projeto, 'servidordadosgx', None) or '',
+        'usuariodadosgx': descriptografar_segredo(getattr(projeto, 'usuariodadosgx', None)) or '',
+        'senhadadosgx': '',
+        'senhadadosgx_configurada': bool(getattr(projeto, 'senhadadosgx', None)),
         'BancoHomo': projeto.BancoHomo,
         'PontoFocal': projeto.PontoFocal,
         'ConsultorLider': projeto.ConsultorLider,
@@ -105,8 +109,10 @@ def _garantir_colunas_senha_largas(cursor):
     for coluna in (
         "senhaproducao",
         "senhahomologacao",
+        "senhadadosgx",
         "usuarioProducao",
         "usuariohomologacao",
+        "usuariodadosgx",
     ):
         try:
             cursor.execute(
@@ -154,6 +160,9 @@ _COLUNAS_PROJETO_SELECT = """
     servidorhomologacao,
     usuariohomologacao,
     senhahomologacao,
+    servidordadosgx,
+    usuariodadosgx,
+    senhadadosgx,
     BancoHomo,
     PontoFocal,
     ConsultorLider,
@@ -192,6 +201,9 @@ def gerenciar_projetos():
             )
 
         cursor = conn.cursor()
+        garantir_colunas_dadosgx(cursor)
+        conn.commit()
+        _garantir_colunas_senha_largas(cursor)
 
         mostrar_concluidos = request.args.get('mostrar_concluidos', '').strip().lower() in (
             '1', 'true', 'sim', 'on', 'yes',
@@ -248,7 +260,7 @@ def salvar_projeto():
 
     data = request.get_json()
     dados_log = {
-        k: ("***" if ("senha" in k.lower() or k.lower() in ("usuarioproducao", "usuariohomologacao")) else v)
+        k: ("***" if ("senha" in k.lower() or k.lower() in ("usuarioproducao", "usuariohomologacao", "usuariodadosgx")) else v)
         for k, v in (data or {}).items()
     }
     logger.info(f"Dados recebidos para salvar projeto: {dados_log}")
@@ -266,6 +278,11 @@ def salvar_projeto():
     servidorhomologacao = data.get("servidorhomologacao")
     usuariohomologacao = _cifrar_usuario_db(data.get("usuariohomologacao"))
     senhahomologacao_input = data.get("senhahomologacao")
+
+    # CAMPOS DE DADOS GX
+    servidordadosgx = data.get("servidordadosgx")
+    usuariodadosgx = _cifrar_usuario_db(data.get("usuariodadosgx"))
+    senhadadosgx_input = data.get("senhadadosgx")
     
     banco_homo = data.get("banco_homo")
     ponto_focal = data.get("ponto_focal")
@@ -305,6 +322,8 @@ def salvar_projeto():
             return jsonify({"status": "error", "message": "Erro de conexão com o banco"}), 500
 
         cursor = conn.cursor()
+        garantir_colunas_dadosgx(cursor)
+        conn.commit()
         _garantir_colunas_senha_largas(cursor)
 
         nome_projeto = (nome_projeto or '').strip()
@@ -342,7 +361,10 @@ def salvar_projeto():
             
             # Verificar se o projeto existe
             cursor.execute(
-                "SELECT ProjetoID, NomeProjeto, senhaproducao, senhahomologacao FROM Projeto WHERE ProjetoID = ?",
+                """
+                SELECT ProjetoID, NomeProjeto, senhaproducao, senhahomologacao, senhadadosgx
+                FROM Projeto WHERE ProjetoID = ?
+                """,
                 (projeto_id,),
             )
             projeto_existente = cursor.fetchone()
@@ -356,11 +378,16 @@ def salvar_projeto():
             senhahomologacao = _resolver_senha_para_gravar(
                 senhahomologacao_input, projeto_existente.senhahomologacao
             )
+            senhadadosgx = _resolver_senha_para_gravar(
+                senhadadosgx_input, getattr(projeto_existente, "senhadadosgx", None)
+            )
             # Re-cifra legado em texto claro se o campo não foi alterado nesta edição
             if senhaproducao and not esta_criptografado(str(senhaproducao)):
                 senhaproducao = criptografar_segredo(senhaproducao)
             if senhahomologacao and not esta_criptografado(str(senhahomologacao)):
                 senhahomologacao = criptografar_segredo(senhahomologacao)
+            if senhadadosgx and not esta_criptografado(str(senhadadosgx)):
+                senhadadosgx = criptografar_segredo(senhadadosgx)
 
             # Atualizar projeto COM OS NOMES CORRETOS DAS COLUNAS
             cursor.execute("""
@@ -373,6 +400,9 @@ def salvar_projeto():
                     servidorhomologacao = ?,
                     usuariohomologacao = ?,
                     senhahomologacao = ?,
+                    servidordadosgx = ?,
+                    usuariodadosgx = ?,
+                    senhadadosgx = ?,
                     BancoHomo = ?, 
                     PontoFocal = ?, 
                     ConsultorLider = ?, 
@@ -398,6 +428,9 @@ def salvar_projeto():
                 servidorhomologacao,
                 usuariohomologacao,
                 senhahomologacao,
+                servidordadosgx,
+                usuariodadosgx,
+                senhadadosgx,
                 banco_homo,
                 ponto_focal,
                 consultor_lider,
@@ -450,19 +483,23 @@ def salvar_projeto():
             senhahomologacao = (
                 criptografar_segredo(senhahomologacao_input) if senhahomologacao_input else None
             )
+            senhadadosgx = (
+                criptografar_segredo(senhadadosgx_input) if senhadadosgx_input else None
+            )
             
             # Inserir novo projeto e obter o ID diretamente
             cursor.execute("""
                 INSERT INTO Projeto (
                     NomeProjeto, DadosGX, servidorproducao, usuarioProducao, 
                     senhaproducao, servidorhomologacao, usuariohomologacao,
-                    senhahomologacao, BancoHomo, PontoFocal, ConsultorLider, LiderProjeto,
+                    senhahomologacao, servidordadosgx, usuariodadosgx, senhadadosgx,
+                    BancoHomo, PontoFocal, ConsultorLider, LiderProjeto,
                     migrador, bancoProducao, Concluido,
                     TipoWindowsWorkflow, TipoWorkflowWorkflow, TipoArquivoWorkflow,
                     Fase1DataInicio, Fase1DataTermino, Fase2DataInicio, Fase2DataTermino,
                     ImportacaoLiberada
                 ) OUTPUT INSERTED.ProjetoID 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 nome_projeto,
                 dados_gx,
@@ -472,6 +509,9 @@ def salvar_projeto():
                 servidorhomologacao,
                 usuariohomologacao,
                 senhahomologacao,
+                servidordadosgx,
+                usuariodadosgx,
+                senhadadosgx,
                 banco_homo,
                 ponto_focal,
                 consultor_lider,
@@ -548,6 +588,8 @@ def obter_projeto(projeto_id):
             return jsonify({"success": False, "message": "Erro de conexão com o banco de dados"})
 
         cursor = conn.cursor()
+        garantir_colunas_dadosgx(cursor)
+        conn.commit()
         
         # Consulta COM OS NOMES CORRETOS DAS COLUNAS
         cursor.execute(f"""

@@ -40,6 +40,10 @@ def layout_eh_produto(nome_layout, descricao=None, colunas=None):
             return False
         if 'prodlocacao' in nome.replace('_', '') or 'prod_locacao' in nome:
             return False
+        if 'intercambiavel' in nome.replace('_', '') or 'intercambeavel' in nome.replace('_', ''):
+            if texto == nome_layout:
+                return False
+            continue
         if nome == 'produto' or (nome.endswith('_produto') and 'estoque' not in nome):
             return True
         if 'produto' in nome and 'estoque' not in nome:

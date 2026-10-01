@@ -259,14 +259,20 @@ def validar_dataframe_depende_produto_mg(cursor, df, layout_nome=None, layout_de
     colunas = _ordenar_colunas_layout(colunas_layout or [])
     linhas = []
     if df is not None and not df.empty:
-        mapa_cols = {str(c).strip().upper(): c for c in df.columns}
-        for _, row in df.iterrows():
-            campos = []
-            for col in colunas:
-                desc = (col.get('Descricao') or '').strip().upper()
-                nome_col = mapa_cols.get(desc)
-                campos.append(str(row.get(nome_col, '') or '') if nome_col else '')
-            linhas.append(campos)
+        mapa_cols = {str(c).strip().upper(): i for i, c in enumerate(df.columns)}
+        idxs = []
+        for col in colunas:
+            desc = (col.get('Descricao') or '').strip().upper()
+            idxs.append(mapa_cols.get(desc))
+
+        def _iter_linhas():
+            for row in df.itertuples(index=False, name=None):
+                yield [
+                    (str(row[i] or '') if i is not None else '')
+                    for i in idxs
+                ]
+
+        linhas = _iter_linhas()
 
     erros = validar_linhas_dependem_produto_mg(linhas, colunas, chaves, produto_mg_existe=existe)
     if erros:

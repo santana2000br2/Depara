@@ -40,7 +40,7 @@ PRINT ''========================================================================
         (est_cd, est_ds)
     SELECT DISTINCT
         est_cd = RTRIM(LTRIM(a.ESTOQUE_CODIGO)),
-        est_ds = RTRIM(LTRIM(a.LOCALIZACAO))
+        est_ds = RTRIM(LTRIM(a.ESTOQUE_CODIGO))
     FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ProdutoEstoque_MG a
     WHERE
         a.Flag = 1

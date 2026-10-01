@@ -23,10 +23,14 @@ class Config:
     # Gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     CREDENTIALS_KEY = os.getenv("CREDENTIALS_KEY", "")
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
-    # Mínimo 256 MB — evita worker IIS com .env antigo (16 MB) até reiniciar o pool
+    ARQUIVOS_PROJETOS_ROOT = os.getenv(
+        "ARQUIVOS_PROJETOS_ROOT",
+        r"E:\Arquivos dos Projetos",
+    )
+    # Mínimo 1 GB — Forn_cli e demais layouts grandes; o teto do IIS precisa coincidir
     MAX_CONTENT_LENGTH = max(
-        int(os.getenv("MAX_CONTENT_LENGTH", "268435456")),
-        268435456,
+        int(os.getenv("MAX_CONTENT_LENGTH", "1073741824")),
+        1073741824,
     )
 
     # Google reCAPTCHA v2 (login). Sem as duas chaves, o captcha fica desligado.

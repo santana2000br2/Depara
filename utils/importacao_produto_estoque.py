@@ -5,8 +5,14 @@ Requer Produto_MG (layout 7 Produto) com a mesma PRODUTO_REFERENCIA + CNPJ_EMPRE
 """
 from logger import logger
 from utils.importacao_forn_cli import (
+    _coluna_existe,
+    _executar,
     _normalizar_colunas_dataframe,
     _normalizar_nome_layout,
+    _quote_col,
+    _quote_table,
+    _resolver_coluna,
+    _tabela_existe,
     _validar_identificador_sql,
     garantir_tabela_staging,
     inserir_staging,
@@ -61,6 +67,97 @@ def layout_eh_produto_estoque(nome_layout, descricao=None, colunas=None):
     return False
 
 
+def resumir_soma_estoque(cursor):
+    """
+    Totais de QUANTIDADE e PRECO_MEDIO por CNPJ_EMPRESA e ESTOQUE_CODIGO
+    em ProdutoEstoque_MG, depois da importação.
+    """
+    colunas = ('CNPJ_EMPRESA', 'ESTOQUE_CODIGO', 'QUANTIDADE', 'PRECO_MEDIO')
+    if not _tabela_existe(cursor, TABELA_DESTINO):
+        return []
+    if any(not _coluna_existe(cursor, TABELA_DESTINO, nome) for nome in colunas):
+        logger.warning("Soma de estoque ignorada: coluna ausente em %s", TABELA_DESTINO)
+        return []
+
+    cnpj = _quote_col(_resolver_coluna(cursor, TABELA_DESTINO, 'CNPJ_EMPRESA'))
+    estoque = _quote_col(_resolver_coluna(cursor, TABELA_DESTINO, 'ESTOQUE_CODIGO'))
+    qtd = _quote_col(_resolver_coluna(cursor, TABELA_DESTINO, 'QUANTIDADE'))
+    preco = _quote_col(_resolver_coluna(cursor, TABELA_DESTINO, 'PRECO_MEDIO'))
+    dest = _quote_table(TABELA_DESTINO)
+    qtd_num = f"TRY_CONVERT(decimal(18,4), REPLACE({qtd}, ',', '.'))"
+    preco_num = f"TRY_CONVERT(decimal(18,4), REPLACE({preco}, ',', '.'))"
+
+    _executar(cursor, f"""
+        SELECT
+            {cnpj},
+            {estoque},
+            FORMAT(SUM({qtd_num}), 'N0', 'pt-BR') AS QUANTIDADE_TOTAL,
+            FORMAT(SUM({preco_num}), 'C', 'pt-BR') AS PRECO_MEDIO_TOTAL
+        FROM dbo.{dest}
+        WHERE {qtd_num} <> 0
+        GROUP BY {cnpj}, {estoque}
+        ORDER BY {cnpj}, {estoque}
+    """)
+    linhas = []
+    for row in cursor.fetchall():
+        linhas.append({
+            'cnpj_empresa': '' if row[0] is None else str(row[0]).strip(),
+            'estoque_codigo': '' if row[1] is None else str(row[1]).strip(),
+            'quantidade_total': '' if row[2] is None else str(row[2]).strip(),
+            'preco_medio_total': '' if row[3] is None else str(row[3]).strip(),
+        })
+    logger.info("Soma de estoque: %s grupo(s) CNPJ/ESTOQUE_CODIGO", len(linhas))
+    return linhas
+
+
+def corrigir_depara_estoque_codigo(cursor):
+    """
+    Estoque_DePara deve nascer de ESTOQUE_CODIGO (posição 4).
+    A procedure antiga gravava LOCALIZACAO (posição 10) em est_ds.
+    """
+    if not _tabela_existe(cursor, 'Estoque_DePara') or not _tabela_existe(cursor, TABELA_DESTINO):
+        return
+    if not _coluna_existe(cursor, TABELA_DESTINO, 'ESTOQUE_CODIGO'):
+        return
+
+    dest = _quote_table(TABELA_DESTINO)
+    where_flag = ""
+    if _coluna_existe(cursor, TABELA_DESTINO, 'Flag'):
+        where_flag = " AND a.Flag = 1"
+
+    _executar(cursor, f"""
+        INSERT INTO dbo.[Estoque_DePara] (est_cd, est_ds)
+        SELECT DISTINCT
+            RTRIM(LTRIM(a.ESTOQUE_CODIGO)),
+            RTRIM(LTRIM(a.ESTOQUE_CODIGO))
+        FROM dbo.{dest} a
+        WHERE RTRIM(LTRIM(ISNULL(a.ESTOQUE_CODIGO, ''))) <> ''
+          {where_flag}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM dbo.[Estoque_DePara] b
+              WHERE RTRIM(LTRIM(ISNULL(b.est_cd, ''))) = RTRIM(LTRIM(a.ESTOQUE_CODIGO))
+          )
+    """)
+
+    if _coluna_existe(cursor, TABELA_DESTINO, 'LOCALIZACAO'):
+        _executar(cursor, f"""
+            UPDATE b
+            SET b.est_ds = RTRIM(LTRIM(b.est_cd))
+            FROM dbo.[Estoque_DePara] b
+            WHERE EXISTS (
+                SELECT 1
+                FROM dbo.{dest} a
+                WHERE RTRIM(LTRIM(ISNULL(a.ESTOQUE_CODIGO, ''))) = RTRIM(LTRIM(ISNULL(b.est_cd, '')))
+                  AND RTRIM(LTRIM(ISNULL(a.ESTOQUE_CODIGO, ''))) <> ''
+                  AND RTRIM(LTRIM(ISNULL(a.LOCALIZACAO, ''))) = RTRIM(LTRIM(ISNULL(b.est_ds, '')))
+                  AND RTRIM(LTRIM(ISNULL(a.LOCALIZACAO, ''))) <> RTRIM(LTRIM(ISNULL(a.ESTOQUE_CODIGO, '')))
+                  {where_flag}
+            )
+        """)
+    logger.info("Estoque_DePara ajustado para ESTOQUE_CODIGO")
+
+
 def importar_produto_estoque_para_base(df, banco_gx, banco_wf=None):
     """Importa DataFrame validado para DadosGX (ProdutoEstoque_MG)."""
     from db.connection import conectar_segunda_base
@@ -97,10 +194,17 @@ def importar_produto_estoque_para_base(df, banco_gx, banco_wf=None):
 
         from utils.importacao_depara_procedures import executar_depara_pos_importacao
         resumo_depara = executar_depara_pos_importacao(cursor, TIPO_LAYOUT, banco_gx, banco_wf)
+        corrigir_depara_estoque_codigo(cursor)
 
         conn.commit()
         resumo = obter_resumo_importacao(cursor, banco_gx, TABELA_DESTINO)
+        try:
+            soma_estoque = resumir_soma_estoque(cursor)
+        except Exception:
+            logger.exception("Falha ao totalizar QUANTIDADE e PRECO_MEDIO por estoque")
+            soma_estoque = []
         resumo['inseridos_staging'] = total_inserido
+        resumo['soma_estoque'] = soma_estoque
         resumo['procedure'] = _cfg.get('procedure', 'up_01_Extrai_ProdutoEstoque_gx')
         resumo['depara'] = resumo_depara
         msg = (

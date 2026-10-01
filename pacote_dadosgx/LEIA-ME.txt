@@ -1,6 +1,6 @@
 PACOTE PROCEDURES SQL — DADOS GX
 ================================
-Gerado em: 10/08/2026 17:23
+Gerado em: 01/10/2026 08:20
 
 Conteudo
 --------
@@ -37,5 +37,5 @@ Parametros das procedures
 
 Contagem
 --------
-  Extração: 22 procedure(s)
-  De/Para : 32 procedure(s)
+  Extração: 23 procedure(s)
+  De/Para : 33 procedure(s)

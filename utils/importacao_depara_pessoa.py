@@ -308,8 +308,9 @@ def formatar_resumo_depara(resumo):
         'agente_cobrador': 'Agente Cobrador',
         'conta_gerencial': 'Conta Gerencial',
         'tipo_titulo': 'Tipo Título',
+        'tipo_ficha_razao': 'Tipo Ficha Razão',
     }
-    meta = {'via_procedure', 'procedures_executadas'}
+    meta = {'via_procedure', 'procedures_executadas', 'erros'}
     partes = []
 
     # Mantém ordem conhecida; depois inclui chaves novas automaticamente

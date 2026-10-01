@@ -1,7 +1,7 @@
 -- =============================================================================
 -- DROP — Procedures De/Para (DadosGX)
 -- Pacote DadosGX — gerar drop antes da reinstalacao
--- Gerado em: 10/08/2026 17:23
+-- Gerado em: 01/10/2026 08:20
 -- =============================================================================
 
 USE [DadosGX_SeuProjeto];  -- ALTERE para o nome real do banco DadosGX
@@ -117,6 +117,10 @@ GO
 
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_06_Financeiro_DePara_Banco' AND TYPE = 'P')
     DROP PROCEDURE dbo.[up_06_Financeiro_DePara_Banco];
+GO
+
+IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_Adiantamento_DePara_TipoFichaRazao' AND TYPE = 'P')
+    DROP PROCEDURE dbo.[up_01_Adiantamento_DePara_TipoFichaRazao];
 GO
 
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_MovimentoEstoque_DePara_NaturezaOperacao' AND TYPE = 'P')

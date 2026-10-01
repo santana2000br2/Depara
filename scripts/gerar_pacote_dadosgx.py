@@ -76,6 +76,7 @@ def list_depara() -> list[Path]:
             "produtoestoque": 50,
             "veiculo": 60,
             "financeiro": 70,
+            "adiantamento": 75,
             "movimentoestoque": 80,
             "fseg_cab": 90,
         }.get(familia, 500)

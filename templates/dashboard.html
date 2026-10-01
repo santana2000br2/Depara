@@ -270,6 +270,48 @@
             color: #9ca3af;
         }
 
+        .quadro-data-disponivel .btn-editar-data-bloco,
+        .categoria-data .btn-editar-data-bloco {
+            border: none;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+        }
+
+        .editor-data-bloco {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .form-data-bloco {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 8px;
+        }
+
+        .input-data-bloco {
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 0.8rem;
+        }
+
+        .btn-salvar-data-bloco,
+        .btn-salvar-data-form {
+            border: none;
+            background: #0f766e;
+            color: #fff;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
         .categoria-link {
             text-decoration: none;
             color: inherit;
@@ -426,6 +468,25 @@
     </style>
 </head>
 <body>
+{% macro linha_data_quadro(escopo) -%}
+{% set info = datas_blocos.get(escopo) if datas_blocos is defined else none %}
+<p class="quadro-data-disponivel {% if not (info and info.data) %}pendente{% endif %}" data-escopo="{{ escopo }}">
+    {% if info and info.data %}
+    <i class="fas fa-calendar-check"></i>
+    <span class="bloco-data-prefixo">De/Para disponível desde </span><span class="bloco-data-texto">{{ info.data }}</span>
+    {% else %}
+    <i class="fas fa-clock"></i>
+    <span class="bloco-data-prefixo"></span><span class="bloco-data-texto">{% if projeto_arquivo_workflow|default(false) %}Aguardando importação do layout{% else %}Sem data definida{% endif %}</span>
+    {% endif %}
+    {% if pode_editar_data_bloco|default(false) %}
+    <form method="post" action="{{ url_for('dashboard.salvar_bloco_disponivel') }}" class="form-data-bloco">
+        <input type="hidden" name="escopo" value="{{ escopo }}">
+        <input type="text" name="data" class="input-data-bloco" autocomplete="off" placeholder="dd/mm/aaaa" value="{% if info and info.data %}{{ info.data.split(' ')[0] }}{% endif %}">
+        <button type="submit" class="btn-salvar-data-form">Salvar</button>
+    </form>
+    {% endif %}
+</p>
+{%- endmacro %}
     <!-- DEBUG Section (opcional) -->
     <div style="background: #f8f9fa; padding: 10px; margin: 10px; border: 1px solid #ddd; display: none;" id="debug-section">
         <h3>DEBUG INFO</h3>
@@ -462,6 +523,16 @@
                 </div>
             </div>
         </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div style="margin: 12px 0;">
+            {% for category, message in messages %}
+            <div style="padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; background: {% if category == 'success' %}#d1fae5{% elif category == 'error' %}#fee2e2{% else %}#e0f2fe{% endif %};">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
 
         {% if status_layouts_obrigatorios and status_layouts_obrigatorios.ativo %}
         <div class="layouts-obrig-banner">
@@ -566,14 +637,14 @@
                     <span>{{ percentual }}% Concluído</span>
                 </div>
                 {% if datas_blocos is defined and datas_blocos.get(escopo) and datas_blocos[escopo].data %}
-                <div class="categoria-data" title="{% if datas_blocos[escopo].layout %}Layout: {{ datas_blocos[escopo].layout }}{% endif %}{% if datas_blocos[escopo].ultima %} · Última importação: {{ datas_blocos[escopo].ultima }}{% endif %}">
+                <div class="categoria-data" data-escopo="{{ escopo }}" title="{% if datas_blocos[escopo].layout %}Layout: {{ datas_blocos[escopo].layout }}{% endif %}{% if datas_blocos[escopo].ultima %} · Última importação: {{ datas_blocos[escopo].ultima }}{% endif %}">
                     <i class="fas fa-calendar-check"></i>
-                    Disponível desde {{ datas_blocos[escopo].data }}
+                    <span class="bloco-data-prefixo">Disponível desde </span><span class="bloco-data-texto">{{ datas_blocos[escopo].data }}</span>
                 </div>
                 {% else %}
-                <div class="categoria-data pendente">
+                <div class="categoria-data pendente" data-escopo="{{ escopo }}">
                     <i class="fas fa-clock"></i>
-                    Aguardando importação do layout
+                    <span class="bloco-data-prefixo"></span><span class="bloco-data-texto">{% if projeto_arquivo_workflow|default(false) %}Aguardando importação do layout{% else %}Sem data definida{% endif %}</span>
                 </div>
                 {% endif %}
             </a>
@@ -587,11 +658,7 @@
             <div class="content-header">
                 <h2>Pessoa</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
-                {% if datas_blocos is defined and datas_blocos.get('PESSOA') and datas_blocos['PESSOA'].data %}
-                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['PESSOA'].data }}</p>
-                {% else %}
-                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
-                {% endif %}
+                {{ linha_data_quadro('PESSOA') }}
             </div>
             <table class="status-table">
                 <thead>
@@ -626,11 +693,7 @@
             <div class="content-header">
                 <h2>Geral</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
-                {% if datas_blocos is defined and datas_blocos.get('GERAL') and datas_blocos['GERAL'].data %}
-                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['GERAL'].data }}</p>
-                {% else %}
-                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
-                {% endif %}
+                {{ linha_data_quadro('GERAL') }}
             </div>
             <table class="status-table">
                 <thead>
@@ -683,11 +746,7 @@
             <div class="content-header">
                 <h2>Produto</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
-                {% if datas_blocos is defined and datas_blocos.get('PRODUTOS') and datas_blocos['PRODUTOS'].data %}
-                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['PRODUTOS'].data }}</p>
-                {% else %}
-                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
-                {% endif %}
+                {{ linha_data_quadro('PRODUTOS') }}
             </div>
             <table class="status-table">
                 <thead>
@@ -714,11 +773,7 @@
             <div class="content-header">
                 <h2>Veículos</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
-                {% if datas_blocos is defined and datas_blocos.get('VEICULOS') and datas_blocos['VEICULOS'].data %}
-                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['VEICULOS'].data }}</p>
-                {% else %}
-                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
-                {% endif %}
+                {{ linha_data_quadro('VEICULOS') }}
             </div>
             <table class="status-table">
                 <thead>
@@ -745,11 +800,7 @@
             <div class="content-header">
                 <h2>Financeiro</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
-                {% if datas_blocos is defined and datas_blocos.get('FINANCEIRO') and datas_blocos['FINANCEIRO'].data %}
-                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['FINANCEIRO'].data }}</p>
-                {% else %}
-                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
-                {% endif %}
+                {{ linha_data_quadro('FINANCEIRO') }}
             </div>
             <table class="status-table">
                 <thead>
@@ -776,11 +827,7 @@
             <div class="content-header">
                 <h2>Contabilidade</h2>
                 <p class="content-description">Status de Conclusão das Tabelas</p>
-                {% if datas_blocos is defined and datas_blocos.get('CONTABILIDADE') and datas_blocos['CONTABILIDADE'].data %}
-                <p class="quadro-data-disponivel"><i class="fas fa-calendar-check"></i> De/Para disponível desde {{ datas_blocos['CONTABILIDADE'].data }}</p>
-                {% else %}
-                <p class="quadro-data-disponivel pendente"><i class="fas fa-clock"></i> Aguardando importação do layout</p>
-                {% endif %}
+                {{ linha_data_quadro('CONTABILIDADE') }}
             </div>
             <table class="status-table">
                 <thead>
@@ -869,12 +916,16 @@
         window.progresso_total = {{ progresso_total | tojson | safe }};
         window.escopos_habilitados = {{ escopos_habilitados | tojson | safe }};
         window.progresso_categorias = {{ progresso_categorias | tojson | safe }};
+        window.blocoDisponivelConfig = {
+            podeEditar: {{ (pode_editar_data_bloco|default(false))|tojson }},
+            url: "{{ url_for('dashboard.salvar_bloco_disponivel') }}"
+        };
         window.tableRoutes = Object.assign({}, window.tableRoutes || {}, {
             'Enquadramento': "{{ url_for('enquadramento.index') }}"
         });
     </script>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260814"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260918a"></script>
     <script>
     // DEBUG: Verificar se as variáveis estão sendo carregadas
     console.log("=== DEBUG DASHBOARD ===");

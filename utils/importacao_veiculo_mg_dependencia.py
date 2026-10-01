@@ -180,8 +180,8 @@ def validar_dataframe_depende_veiculo_mg(cursor, df, layout_nome=None, layout_de
                 if str(c).strip().upper() == 'CHASSI':
                     col_chassi = c
                     break
-        for _, row in df.iterrows():
-            linhas.append([str(row.get(col_chassi, '') or '')])
+        if col_chassi in df.columns:
+            linhas = ([str(v or '')] for v in df[col_chassi])
 
     colunas = colunas_layout or [{'Descricao': 'CHASSI', 'Posicao': 1}]
     # Alinha com validar_linhas: um único campo no índice 0 = CHASSI

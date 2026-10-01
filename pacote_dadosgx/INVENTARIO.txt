@@ -2,6 +2,7 @@
 
 ## Extracao
 - 01_extracao\_util\up_Replace_Name_DadosGx_Procedures.sql
+- 01_extracao\Adiantamento\up_01_Extrai_Adiantamento_gx.sql
 - 01_extracao\Financeiro\up_01_Extrai_Financeiro_gx.sql
 - 01_extracao\Forn_cli\up_01_Extrai_Pessoa_gx.sql
 - 01_extracao\Forn_cli_Conjuge\up_07_Extrai_PessoaConjuge_gx.sql
@@ -53,6 +54,7 @@
 - 02_depara\Financeiro\up_04_Financeiro_DePara_Departamento.sql
 - 02_depara\Financeiro\up_05_Financeiro_DePara_NaturezaOperacao.sql
 - 02_depara\Financeiro\up_06_Financeiro_DePara_Banco.sql
+- 02_depara\Adiantamento\up_01_Adiantamento_DePara_TipoFichaRazao.sql
 - 02_depara\MovimentoEstoque\up_01_MovimentoEstoque_DePara_NaturezaOperacao.sql
 - 02_depara\MovimentoEstoque\up_02_MovimentoEstoque_DePara_Estoque.sql
 - 02_depara\MovimentoEstoque\up_03_MovimentoEstoque_DePara_Departamento.sql

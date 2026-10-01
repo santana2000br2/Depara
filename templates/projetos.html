@@ -683,11 +683,6 @@
                         <label for="nome_projeto">Nome do Projeto:</label>
                         <input type="text" id="nome_projeto" name="nome_projeto" required>
                     </div>
-                    
-                    <div class="form-group required-field">
-                        <label for="dados_gx">Dados GX:</label>
-                        <input type="text" id="dados_gx" name="dados_gx" required>
-                    </div>
                 </div>
 
                 <!-- TIPO DE PROJETO -->
@@ -743,34 +738,38 @@
                     </div>
                 </div>
 
-                <!-- SEÇÃO DE PRODUÇÃO -->
+                <!-- SEÇÃO DE DADOS GX -->
                 <div class="form-section">
-                    <h3><i class="fas fa-server"></i> Configurações de Produção</h3>
-                    
-                    <div class="form-group">
-                        <label for="bancoProducao">Banco de Produção:</label>
-                        <input type="text" id="bancoProducao" name="bancoProducao">
+                    <h3><i class="fas fa-database"></i> Configurações de Dados GX</h3>
+                    <p class="importacao-arquivo-hint" style="margin-top:0;">
+                        <i class="fas fa-info-circle"></i>
+                        Usado pelo painel De/Para e pela importação. Se servidor/usuário/senha ficarem em branco, o sistema usa as credenciais de homologação e, se estas também faltarem, o .env (DB2_*).
+                    </p>
+
+                    <div class="form-group required-field">
+                        <label for="dados_gx">Banco Dados GX:</label>
+                        <input type="text" id="dados_gx" name="dados_gx" required>
                     </div>
-                    
+
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="servidorproducao">Servidor de Produção:</label>
-                            <input type="text" id="servidorproducao" name="servidorproducao">
+                            <label for="servidordadosgx">Servidor Dados GX:</label>
+                            <input type="text" id="servidordadosgx" name="servidordadosgx">
                         </div>
 
                         <div class="form-group">
-                            <label for="usuarioProducao">Usuário de Produção:</label>
-                            <input type="text" id="usuarioProducao" name="usuarioProducao">
+                            <label for="usuariodadosgx">Usuário Dados GX:</label>
+                            <input type="text" id="usuariodadosgx" name="usuariodadosgx">
                         </div>
                     </div>
-                    
+
                     <div class="form-group password-toggle">
-                        <label for="senhaproducao">Senha de Produção:</label>
-                        <input type="password" id="senhaproducao" name="senhaproducao" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
-                        <span class="toggle-icon" id="toggleSenhaProducao">
+                        <label for="senhadadosgx">Senha Dados GX:</label>
+                        <input type="password" id="senhadadosgx" name="senhadadosgx" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
+                        <span class="toggle-icon" id="toggleSenhaDadosGx">
                             <i class="fas fa-eye"></i>
                         </span>
-                        <small id="hint_senhaproducao" class="form-hint" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
+                        <small id="hint_senhadadosgx" class="form-hint" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
                     </div>
                 </div>
 
@@ -802,6 +801,37 @@
                             <i class="fas fa-eye"></i>
                         </span>
                         <small id="hint_senhahomologacao" class="form-hint" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
+                    </div>
+                </div>
+
+                <!-- SEÇÃO DE PRODUÇÃO -->
+                <div class="form-section">
+                    <h3><i class="fas fa-server"></i> Configurações de Produção</h3>
+                    
+                    <div class="form-group">
+                        <label for="bancoProducao">Banco de Produção:</label>
+                        <input type="text" id="bancoProducao" name="bancoProducao">
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="servidorproducao">Servidor de Produção:</label>
+                            <input type="text" id="servidorproducao" name="servidorproducao">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="usuarioProducao">Usuário de Produção:</label>
+                            <input type="text" id="usuarioProducao" name="usuarioProducao">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group password-toggle">
+                        <label for="senhaproducao">Senha de Produção:</label>
+                        <input type="password" id="senhaproducao" name="senhaproducao" placeholder="Deixe em branco para manter a atual" autocomplete="new-password">
+                        <span class="toggle-icon" id="toggleSenhaProducao">
+                            <i class="fas fa-eye"></i>
+                        </span>
+                        <small id="hint_senhaproducao" class="form-hint" style="display:none;color:#666;">Senha já configurada — preencha só para alterar.</small>
                     </div>
                 </div>
 
@@ -896,6 +926,8 @@
     const senhaProducaoField = document.getElementById('senhaproducao');
     const toggleSenhaHomologacao = document.getElementById('toggleSenhaHomologacao');
     const senhaHomologacaoField = document.getElementById('senhahomologacao');
+    const toggleSenhaDadosGx = document.getElementById('toggleSenhaDadosGx');
+    const senhaDadosGxField = document.getElementById('senhadadosgx');
     const secaoImportacaoArquivo = document.getElementById('secaoImportacaoArquivo');
     const importacaoLiberadaField = document.getElementById('importacao_liberada');
 
@@ -926,11 +958,22 @@
         this.innerHTML = type === 'password' ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
     });
 
+    // Toggle para senha de Dados GX
+    toggleSenhaDadosGx.addEventListener('click', function() {
+        const type = senhaDadosGxField.getAttribute('type') === 'password' ? 'text' : 'password';
+        senhaDadosGxField.setAttribute('type', type);
+        this.innerHTML = type === 'password' ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+    });
+
     // Abrir modal para novo projeto
     btnNovo.onclick = function() {
         modalTitle.textContent = 'Adicionar Projeto';
         form.reset();
         projetoIdField.value = '';
+        ['hint_senhaproducao', 'hint_senhahomologacao', 'hint_senhadadosgx'].forEach((id) => {
+            const hint = document.getElementById(id);
+            if (hint) hint.style.display = 'none';
+        });
         atualizarSecaoImportacaoArquivo();
         modal.style.display = 'block';
     }
@@ -972,6 +1015,11 @@
                     // Campos gerais (obrigatórios)
                     document.getElementById('nome_projeto').value = projeto.NomeProjeto;
                     document.getElementById('dados_gx').value = projeto.DadosGX || '';
+                    document.getElementById('servidordadosgx').value = projeto.servidordadosgx || '';
+                    document.getElementById('usuariodadosgx').value = projeto.usuariodadosgx || '';
+                    document.getElementById('senhadadosgx').value = '';
+                    const hintGx = document.getElementById('hint_senhadadosgx');
+                    if (hintGx) hintGx.style.display = projeto.senhadadosgx_configurada ? 'block' : 'none';
                     
                     // Campos de produção
                     document.getElementById('bancoProducao').value = projeto.bancoProducao || '';
@@ -1094,6 +1142,9 @@
             fase2_data_termino: document.getElementById('fase2_data_termino').value,
             nome_projeto: nomeProjeto,
             dados_gx: dadosGX,
+            servidordadosgx: document.getElementById('servidordadosgx').value,
+            usuariodadosgx: document.getElementById('usuariodadosgx').value,
+            senhadadosgx: document.getElementById('senhadadosgx').value,
             
             // Campos de produção
             bancoProducao: document.getElementById('bancoProducao').value,

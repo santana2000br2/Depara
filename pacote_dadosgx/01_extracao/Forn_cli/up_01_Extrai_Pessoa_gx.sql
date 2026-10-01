@@ -367,10 +367,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE a SET
-		a.DT_ANIVER = CASE
-						WHEN ISDATE(REPLACE(a.DT_ANIVER,''/'',''-'')) = 0 THEN ''1900-01-01'' 
-						ELSE REPLACE(a.DT_ANIVER,''/'',''-'')  
-					END
+		a.DT_ANIVER = COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'')
 	FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Pessoa_MG a
 	WHERE 
 		a.Flag = 1
@@ -385,11 +382,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE a SET
-		a.DATA_CADASTRO = CASE
-							WHEN ISDATE(REPLACE(a.DATA_CADASTRO,''/'',''-'')) = 0	THEN	''1900-01-01''
-							WHEN (DATA_CADASTRO IS NULL OR DATA_CADASTRO = '''')	THEN	CAST(GETDATE() as date) 
-							ELSE REPLACE(a.DATA_CADASTRO,''/'',''-'') 
-						END
+		a.DATA_CADASTRO = CASE WHEN a.DATA_CADASTRO IS NULL OR LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_CADASTRO, 23))) = '''' THEN CONVERT(varchar(10), CAST(GETDATE() AS date), 23) ELSE COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_CADASTRO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_CADASTRO, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_CADASTRO, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_CADASTRO, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_CADASTRO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'') END
 	FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Pessoa_MG a
 	WHERE 
 		a.Flag = 1
@@ -444,10 +437,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE a SET
-		a.LIM_CREDITO_VALIDADE = CASE 
-									WHEN ISDATE(REPLACE(a.LIM_CREDITO_VALIDADE,''/'',''-'')) = 0 THEN ''1900-01-01'' 
-									ELSE REPLACE(a.LIM_CREDITO_VALIDADE,''/'',''-'')  
-								END
+		a.LIM_CREDITO_VALIDADE = COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.LIM_CREDITO_VALIDADE, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.LIM_CREDITO_VALIDADE, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.LIM_CREDITO_VALIDADE, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.LIM_CREDITO_VALIDADE, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.LIM_CREDITO_VALIDADE, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'')
 	FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Pessoa_MG a
 	WHERE 
 		a.Flag = 1 AND

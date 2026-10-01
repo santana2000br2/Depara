@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(ROOT, ".env"))
 
-from db.connection import conectar_banco
+from db.connection import conectar_banco, garantir_colunas_dadosgx
 from utils.credential_crypto import (
     criptografar_segredo,
     esta_criptografado,
@@ -31,8 +31,10 @@ def _ampliar_colunas(cursor):
     for coluna in (
         "senhaproducao",
         "senhahomologacao",
+        "senhadadosgx",
         "usuarioProducao",
         "usuariohomologacao",
+        "usuariodadosgx",
     ):
         cursor.execute(
             """
@@ -51,8 +53,8 @@ def _ampliar_colunas(cursor):
 def migrar_projetos(cursor):
     cursor.execute(
         """
-        SELECT ProjetoID, senhaproducao, senhahomologacao,
-               usuarioProducao, usuariohomologacao
+        SELECT ProjetoID, senhaproducao, senhahomologacao, senhadadosgx,
+               usuarioProducao, usuariohomologacao, usuariodadosgx
         FROM Projeto
         """
     )
@@ -62,9 +64,11 @@ def migrar_projetos(cursor):
         pid = row.ProjetoID
         sp = row.senhaproducao
         sh = row.senhahomologacao
+        sg = getattr(row, "senhadadosgx", None)
         up = row.usuarioProducao
         uh = row.usuariohomologacao
-        nova_sp, nova_sh, nova_up, nova_uh = sp, sh, up, uh
+        ug = getattr(row, "usuariodadosgx", None)
+        nova_sp, nova_sh, nova_sg, nova_up, nova_uh, nova_ug = sp, sh, sg, up, uh, ug
         mudou = False
         if sp and not esta_criptografado(str(sp)):
             nova_sp = criptografar_segredo(sp)
@@ -72,21 +76,27 @@ def migrar_projetos(cursor):
         if sh and not esta_criptografado(str(sh)):
             nova_sh = criptografar_segredo(sh)
             mudou = True
+        if sg and not esta_criptografado(str(sg)):
+            nova_sg = criptografar_segredo(sg)
+            mudou = True
         if up and not esta_criptografado(str(up)):
             nova_up = criptografar_segredo(up)
             mudou = True
         if uh and not esta_criptografado(str(uh)):
             nova_uh = criptografar_segredo(uh)
             mudou = True
+        if ug and not esta_criptografado(str(ug)):
+            nova_ug = criptografar_segredo(ug)
+            mudou = True
         if mudou:
             cursor.execute(
                 """
                 UPDATE Projeto
-                SET senhaproducao = ?, senhahomologacao = ?,
-                    usuarioProducao = ?, usuariohomologacao = ?
+                SET senhaproducao = ?, senhahomologacao = ?, senhadadosgx = ?,
+                    usuarioProducao = ?, usuariohomologacao = ?, usuariodadosgx = ?
                 WHERE ProjetoID = ?
                 """,
-                (nova_sp, nova_sh, nova_up, nova_uh, pid),
+                (nova_sp, nova_sh, nova_sg, nova_up, nova_uh, nova_ug, pid),
             )
             atualizados += 1
             print(f"  ProjetoID {pid}: credenciais cifradas")
@@ -133,6 +143,8 @@ def main():
 
     cursor = conn.cursor()
     try:
+        print("Garantindo colunas de Dados GX...")
+        garantir_colunas_dadosgx(cursor)
         print("Ampliando colunas se necessário...")
         _ampliar_colunas(cursor)
         print("Migrando Projeto...")

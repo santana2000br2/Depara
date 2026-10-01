@@ -157,7 +157,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE a SET
-		a.DATA_CADASTRO = cast(b.DATA_CADASTRO as date) 
+		a.DATA_CADASTRO = CASE WHEN b.DATA_CADASTRO IS NULL OR LTRIM(RTRIM(CONVERT(varchar(30), b.DATA_CADASTRO, 23))) = '''' THEN CONVERT(varchar(10), CAST(GETDATE() AS date), 23) ELSE COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), b.DATA_CADASTRO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), b.DATA_CADASTRO, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), b.DATA_CADASTRO, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), b.DATA_CADASTRO, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), b.DATA_CADASTRO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'') END
 	FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.PessoaEnquadramento_MG a	
 	INNER JOIN ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Pessoa_MG b ON a.CPF_CNPJ = b.CPF_CNPJ
 	WHERE

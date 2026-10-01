@@ -2,7 +2,7 @@
 -- INSTALAR — Procedures De/Para (DadosGX)
 -- Instalador em T-SQL puro (NAO precisa SQLCMD Mode).
 -- Antes de executar: substitua [DadosGX_SeuProjeto] pelo nome real do banco.
--- Gerado em: 10/08/2026 17:23
+-- Gerado em: 01/10/2026 08:20
 -- =============================================================================
 
 USE [DadosGX_SeuProjeto];  -- ALTERE para o nome real do banco DadosGX
@@ -13,7 +13,7 @@ GO
 -- =============================================================================
 -- DROP — Procedures De/Para (DadosGX)
 -- Pacote DadosGX — gerar drop antes da reinstalacao
--- Gerado em: 10/08/2026 17:23
+-- Gerado em: 01/10/2026 08:20
 -- =============================================================================
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_Pessoa_DePara_SegmentoMercado' AND TYPE = 'P')
     DROP PROCEDURE dbo.[up_01_Pessoa_DePara_SegmentoMercado];
@@ -125,6 +125,10 @@ GO
 
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_06_Financeiro_DePara_Banco' AND TYPE = 'P')
     DROP PROCEDURE dbo.[up_06_Financeiro_DePara_Banco];
+GO
+
+IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_Adiantamento_DePara_TipoFichaRazao' AND TYPE = 'P')
+    DROP PROCEDURE dbo.[up_01_Adiantamento_DePara_TipoFichaRazao];
 GO
 
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_MovimentoEstoque_DePara_NaturezaOperacao' AND TYPE = 'P')
@@ -1507,7 +1511,7 @@ PRINT ''========================================================================
         (est_cd, est_ds)
     SELECT DISTINCT
         est_cd = RTRIM(LTRIM(a.ESTOQUE_CODIGO)),
-        est_ds = RTRIM(LTRIM(a.LOCALIZACAO))
+        est_ds = RTRIM(LTRIM(a.ESTOQUE_CODIGO))
     FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ProdutoEstoque_MG a
     WHERE
         a.Flag = 1
@@ -2024,29 +2028,58 @@ CREATE PROCEDURE dbo.up_02_Financeiro_DePara_ContaGerencial
     @BancoWF      VARCHAR(MAX)
 AS
 DECLARE @CMD NVARCHAR(MAX)
+DECLARE @BancoGX SYSNAME = LTRIM(RTRIM(@BancoDadosGX))
+DECLARE @BancoWFs SYSNAME = LTRIM(RTRIM(@BancoWF))
 
-IF NOT EXISTS (SELECT 1 FROM MASTER.DBO.SYSDATABASES WHERE NAME = @BancoDadosGX)
+IF NOT EXISTS (SELECT 1 FROM MASTER.DBO.SYSDATABASES WHERE NAME = @BancoGX)
 BEGIN
-    PRINT 'O < ' + @BancoDadosGX + ' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
+    PRINT 'O < ' + @BancoGX + ' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
     RETURN
 END
 
-SELECT @CMD = '
+-- 1) Garante colunas extras em ContaGerencial_DePara (batch separado — SQL Server
+--    não permite ADD + referência no mesmo batch).
+SELECT @CMD = N'
+    IF OBJECT_ID(N''' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara'', N''U'') IS NULL
+    BEGIN
+        RAISERROR(''Tabela ContaGerencial_DePara não existe em %s'', 16, 1, ''' + @BancoGX + N''')
+        RETURN
+    END
+
     IF NOT EXISTS (
-        SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col
-        INNER JOIN ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj ON col.object_id = obj.object_id
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
         WHERE col.name = ''ContaGerencial_Tipo'' AND obj.name = ''ContaGerencial_DePara''
     )
-        ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara ADD ContaGerencial_Tipo char(1) NULL
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara ADD ContaGerencial_Tipo char(1) NULL
 
     IF NOT EXISTS (
-        SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.columns col
-        INNER JOIN ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects obj ON col.object_id = obj.object_id
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
         WHERE col.name = ''ContaGerencial_Nivel'' AND obj.name = ''ContaGerencial_DePara''
     )
-        ALTER TABLE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara ADD ContaGerencial_Nivel char(1) NULL
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara ADD ContaGerencial_Nivel char(1) NULL
 
-    INSERT INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara
+    -- Colunas de origem em Titulo_MG (layout pode omitir descrição)
+    IF NOT EXISTS (
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
+        WHERE col.name = ''CONTAGERENCIAL_CODIGO'' AND obj.name = ''Titulo_MG''
+    )
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.Titulo_MG ADD CONTAGERENCIAL_CODIGO VARCHAR(MAX) NULL
+
+    IF NOT EXISTS (
+        SELECT 1 FROM ' + QUOTENAME(@BancoGX) + N'.sys.columns col
+        INNER JOIN ' + QUOTENAME(@BancoGX) + N'.sys.objects obj ON col.object_id = obj.object_id
+        WHERE col.name = ''CONTAGERENCIAL_DESCRICAO'' AND obj.name = ''Titulo_MG''
+    )
+        ALTER TABLE ' + QUOTENAME(@BancoGX) + N'.dbo.Titulo_MG ADD CONTAGERENCIAL_DESCRICAO VARCHAR(MAX) NULL
+'
+EXEC sp_executesql @CMD
+
+-- 2) Carga + match WF (após as colunas existirem)
+SELECT @CMD = N'
+    INSERT INTO ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara
         (pcg_cd, pcg_ds, ContaGerencial_Codigo, ContaGerencial_Identificador, ContaGerencial_Descricao, Origem)
     SELECT DISTINCT
         pcg_cd = ISNULL(a.CONTAGERENCIAL_CODIGO, ''''),
@@ -2059,12 +2092,12 @@ SELECT @CMD = '
                     WHEN (a.TIPO_MOVFINANCEIRO = ''R'') THEN ''Títulos''
                     ELSE ''''
                 END)
-    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Titulo_MG a
+    FROM ' + QUOTENAME(@BancoGX) + N'.dbo.Titulo_MG a
     WHERE
         a.Flag = 1 AND
         NOT EXISTS (
             SELECT 1
-            FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara b
+            FROM ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara b
             WHERE ISNULL(a.CONTAGERENCIAL_CODIGO, '''') = ISNULL(b.pcg_cd, '''') COLLATE DATABASE_DEFAULT
         )
 
@@ -2074,8 +2107,8 @@ SELECT @CMD = '
         a.ContaGerencial_Descricao = b.ContaGerencial_Descricao,
         a.ContaGerencial_Tipo = b.ContaGerencial_Tipo,
         a.ContaGerencial_Nivel = b.ContaGerencial_Nivel
-    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.ContaGerencial_DePara a
-    INNER JOIN ' + LTRIM(RTRIM(@BancoWF)) + '.dbo.ContaGerencial b
+    FROM ' + QUOTENAME(@BancoGX) + N'.dbo.ContaGerencial_DePara a
+    INNER JOIN ' + QUOTENAME(@BancoWFs) + N'.dbo.ContaGerencial b
         ON b.ContaGerencial_Descricao = a.pcg_ds COLLATE Latin1_General_CI_AI
     WHERE a.ContaGerencial_Codigo = ''S/DePara''
 '
@@ -2344,6 +2377,110 @@ SELECT @CMD = '
 EXEC sp_executesql @CMD
 GO
 -- <<< FIM: up_06_Financeiro_DePara_Banco.sql
+GO
+
+
+-- >>> INICIO: up_01_Adiantamento_DePara_TipoFichaRazao.sql
+-- =============================================================================
+-- Layout: Adiantamento De/Para
+-- Procedure: up_01_Adiantamento_DePara_TipoFichaRazao (@BancoDadosGX, @BancoWF)
+-- =============================================================================
+IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_Adiantamento_DePara_TipoFichaRazao' AND TYPE = 'P')
+    DROP PROCEDURE dbo.up_01_Adiantamento_DePara_TipoFichaRazao;
+GO
+
+CREATE PROCEDURE dbo.up_01_Adiantamento_DePara_TipoFichaRazao
+    @BancoDadosGX VARCHAR(MAX),
+    @BancoWF      VARCHAR(MAX)
+AS
+DECLARE @CMD NVARCHAR(MAX)
+
+IF NOT EXISTS (SELECT 1 FROM MASTER.DBO.SYSDATABASES WHERE NAME = @BancoDadosGX)
+BEGIN
+    PRINT 'O < ' + @BancoDadosGX + ' > INFORMADO NAO EXISTE NESTE SERVIDOR!'
+    RETURN
+END
+
+SELECT @CMD = '
+    IF OBJECT_ID(''' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.TipoFichaRazao_DePara'', ''U'') IS NULL
+    BEGIN
+        RAISERROR(''Tabela TipoFichaRazao_DePara não existe.'', 16, 1)
+        RETURN
+    END
+'
+EXEC sp_executesql @CMD
+
+-- Receber (R) → FRT; Pagar (P) → FRO (mesmo padrão de TipoTitulo)
+SELECT @CMD = '
+    INSERT INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.TipoFichaRazao_DePara
+        (frt_cd, frt_ds, fro_cd, fro_ds, dep_cd, dep_nm,
+         TipoFichaRazao_Codigo, TipoFichaRazao_Descricao, TipoFichaRazao_Natureza,
+         Departamento_Codigo, Origem)
+    SELECT DISTINCT
+        frt_cd = ISNULL(a.TIPO_FICHARAZAO, ''''),
+        frt_ds = ISNULL(a.DESCRICAO_FICHARAZAO, ''''),
+        fro_cd = '''',
+        fro_ds = '''',
+        dep_cd = '''',
+        dep_nm = '''',
+        TipoFichaRazao_Codigo = ''S/DePara'',
+        TipoFichaRazao_Descricao = ''S/DePara'',
+        TipoFichaRazao_Natureza = a.TIPO_MOVFINANCEIRO,
+        Departamento_Codigo = '''',
+        Origem = ''Adiantamentos''
+    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.FichaRazao_MG a
+    WHERE
+        a.Flag = 1 AND
+        a.TIPO_MOVFINANCEIRO = ''R'' AND
+        NOT EXISTS (
+            SELECT 1
+            FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.TipoFichaRazao_DePara b
+            WHERE ISNULL(b.frt_cd, '''') = ISNULL(a.TIPO_FICHARAZAO, '''') COLLATE DATABASE_DEFAULT
+              AND ISNULL(b.frt_ds, '''') = ISNULL(a.DESCRICAO_FICHARAZAO, '''') COLLATE DATABASE_DEFAULT
+        )
+
+    INSERT INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.TipoFichaRazao_DePara
+        (frt_cd, frt_ds, fro_cd, fro_ds, dep_cd, dep_nm,
+         TipoFichaRazao_Codigo, TipoFichaRazao_Descricao, TipoFichaRazao_Natureza,
+         Departamento_Codigo, Origem)
+    SELECT DISTINCT
+        frt_cd = '''',
+        frt_ds = '''',
+        fro_cd = ISNULL(a.TIPO_FICHARAZAO, ''''),
+        fro_ds = ISNULL(a.DESCRICAO_FICHARAZAO, ''''),
+        dep_cd = '''',
+        dep_nm = '''',
+        TipoFichaRazao_Codigo = ''S/DePara'',
+        TipoFichaRazao_Descricao = ''S/DePara'',
+        TipoFichaRazao_Natureza = a.TIPO_MOVFINANCEIRO,
+        Departamento_Codigo = '''',
+        Origem = ''Adiantamentos''
+    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.FichaRazao_MG a
+    WHERE
+        a.Flag = 1 AND
+        a.TIPO_MOVFINANCEIRO = ''P'' AND
+        NOT EXISTS (
+            SELECT 1
+            FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.TipoFichaRazao_DePara b
+            WHERE ISNULL(b.fro_cd, '''') = ISNULL(a.TIPO_FICHARAZAO, '''') COLLATE DATABASE_DEFAULT
+              AND ISNULL(b.fro_ds, '''') = ISNULL(a.DESCRICAO_FICHARAZAO, '''') COLLATE DATABASE_DEFAULT
+        )
+
+    UPDATE a
+    SET
+        a.TipoFichaRazao_Codigo = b.TipoFichaRazao_Codigo,
+        a.TipoFichaRazao_Descricao = b.TipoFichaRazao_Descricao,
+        a.TipoFichaRazao_Natureza = b.TipoFichaRazao_Natureza
+    FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.TipoFichaRazao_DePara a
+    INNER JOIN ' + LTRIM(RTRIM(@BancoWF)) + '.dbo.TipoFichaRazao b
+        ON b.TipoFichaRazao_Descricao = RTRIM(LTRIM(
+            CASE WHEN ISNULL(a.frt_ds, '''') <> '''' THEN a.frt_ds ELSE a.fro_ds END
+        )) COLLATE Latin1_General_CI_AI
+    WHERE a.TipoFichaRazao_Codigo = ''S/DePara''
+'
+EXEC sp_executesql @CMD
+GO
+-- <<< FIM: up_01_Adiantamento_DePara_TipoFichaRazao.sql
 GO
 
 

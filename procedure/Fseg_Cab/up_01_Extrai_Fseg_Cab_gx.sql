@@ -161,18 +161,12 @@ SELECT @CMD = '
     END
 
     UPDATE a
-    SET a.DATA_ABERTURA = CASE
-            WHEN a.DATA_ABERTURA IS NULL OR REPLACE(a.DATA_ABERTURA, ''/'', ''-'') = '''' OR ISDATE(a.DATA_ABERTURA) = 0 THEN ''1900-01-01''
-            ELSE REPLACE(a.DATA_ABERTURA, ''/'', ''-'')
-        END
+    SET a.DATA_ABERTURA = COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ABERTURA, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ABERTURA, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ABERTURA, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ABERTURA, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ABERTURA, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'')
     FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Ficha_Cab_MG a
     WHERE a.Flag = 1
 
     UPDATE a
-    SET a.DATA_LIBERACAO = CASE
-            WHEN a.DATA_LIBERACAO IS NULL OR REPLACE(a.DATA_LIBERACAO, ''/'', ''-'') = '''' OR ISDATE(a.DATA_LIBERACAO) = 0 THEN ''1900-01-01''
-            ELSE REPLACE(a.DATA_LIBERACAO, ''/'', ''-'')
-        END
+    SET a.DATA_LIBERACAO = COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_LIBERACAO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_LIBERACAO, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_LIBERACAO, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_LIBERACAO, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_LIBERACAO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'')
     FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Ficha_Cab_MG a
     WHERE a.Flag = 1
 

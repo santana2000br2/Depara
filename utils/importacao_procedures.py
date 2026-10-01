@@ -9,6 +9,7 @@ from utils.importacao_forn_cli import (
     _coluna_existe,
     _executar,
     _executar_procedure,
+    _quote_col,
     _quote_db,
     _quote_table,
     _tabela_existe,
@@ -117,6 +118,21 @@ CONFIG_PROCEDURES = {
         'destino': 'Titulo_MG',
         'requer_wf': True,
     },
+    'adiantamento': {
+        'procedure': 'up_01_Extrai_Adiantamento_gx',
+        'staging': 'Arquivo_Adiantamento_Tratado',
+        'destino': 'FichaRazao_MG',
+        'requer_wf': True,
+    },
+    'intercambiavel': {
+        # up_13 trata Arquivo_Intercambiavel (coluna conteudo). O Python já grava
+        # Arquivo_Intercambiavel_Tratado; a publicação segue o script legado de
+        # ProdutoIntercambiavel_MG (não executa o up_13 para não DROP do Tratado).
+        'procedure': 'up_13_Trata_Arquivo_Intercambiavel_gx',
+        'staging': 'Arquivo_Intercambiavel_Tratado',
+        'destino': 'ProdutoIntercambiavel_MG',
+        'requer_wf': True,
+    },
 }
 
 # Layouts cujas procedures legadas fazem SELECT A.*, 1 AS Flag (colide com Flag da staging).
@@ -135,6 +151,7 @@ LAYOUTS_PRECRIAR_DESTINO = frozenset({
     'fseg_prd',
     'fseg_srv',
     'financeiro',
+    'adiantamento',
 })
 
 # Colunas extras do script original (ALTER após o SELECT INTO).
@@ -303,6 +320,21 @@ COLUNAS_EXTRA_POS_PRECRIAR = {
         ('TITULO_NUMERO_new', 'nvarchar(510) NULL'),
         ('Ocorrencia', 'varchar(500) NULL'),
     ],
+    'adiantamento': [
+        ('SALDO_Original', 'float NULL'),
+        ('Pessoa_DocIdentificador', 'varchar(20) NULL'),
+        ('TipoFichaRazao_Codigo', 'int NULL'),
+        ('FichaRazao_PessoaCod', 'int NULL'),
+        ('FichaRazao_EmpresaCod', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
+    'intercambiavel': [
+        ('ProdutoMarca_MarcaCod', 'int NULL'),
+        ('Flag', 'int NULL'),
+        ('Produto_Codigo', 'int NULL'),
+        ('ProdutoIntercambiavel_ProdutoCod', 'int NULL'),
+        ('Ocorrencia', 'varchar(500) NULL'),
+    ],
 }
 
 
@@ -318,15 +350,58 @@ def procedure_existe(cursor, nome_procedure):
     return cursor.fetchone() is not None
 
 
-def dropar_tabela_se_existir(cursor, banco_gx, nome_tabela):
-    """Remove tabela destino para a procedure recriar (legado só faz SELECT INTO se não existir)."""
+def _nome_backup_destino(nome_tabela):
+    return f"{nome_tabela}__ImpAnterior"
+
+
+def preservar_destino_oficial(cursor, nome_tabela):
+    """Renomeia a tabela oficial para backup antes de republicar a partir da staging."""
+    backup = _nome_backup_destino(nome_tabela)
+    if _tabela_existe(cursor, backup):
+        _executar(cursor, f"DROP TABLE dbo.{_quote_table(backup)}")
+        logger.info("Backup anterior %s removido", backup)
     if not _tabela_existe(cursor, nome_tabela):
         return False
-    tbl = _quote_table(nome_tabela)
-    # Conexão já está no DadosGX — usar dbo. evita falha com nome em 3 partes.
-    _executar(cursor, f"DROP TABLE dbo.{tbl}")
-    logger.info("Tabela %s removida antes da procedure", nome_tabela)
+    _executar(
+        cursor,
+        "EXEC sp_rename ?, ?",
+        (f"dbo.{nome_tabela}", backup),
+    )
+    logger.info("Tabela oficial %s preservada como %s", nome_tabela, backup)
     return True
+
+
+def restaurar_destino_oficial(cursor, nome_tabela):
+    """Devolve a tabela oficial a partir do backup se a publicação falhar."""
+    backup = _nome_backup_destino(nome_tabela)
+    if _tabela_existe(cursor, nome_tabela):
+        _executar(cursor, f"DROP TABLE dbo.{_quote_table(nome_tabela)}")
+        logger.info("Destino parcial %s removido após falha", nome_tabela)
+    if _tabela_existe(cursor, backup):
+        _executar(
+            cursor,
+            "EXEC sp_rename ?, ?",
+            (f"dbo.{backup}", nome_tabela),
+        )
+        logger.info("Tabela oficial %s restaurada (não foi alterada pela importação falha)", nome_tabela)
+        return True
+    return False
+
+
+def descartar_backup_destino(cursor, nome_tabela):
+    backup = _nome_backup_destino(nome_tabela)
+    if _tabela_existe(cursor, backup):
+        _executar(cursor, f"DROP TABLE dbo.{_quote_table(backup)}")
+        logger.info("Publicação concluída — backup %s descartado", backup)
+
+
+def dropar_tabela_se_existir(cursor, banco_gx, nome_tabela):
+    """Protege a tabela oficial: em vez de DROP imediato, renomeia para backup.
+
+    Alteração mínima de transporte da publicação (não altera procedure nem validação).
+    Se a extração falhar, restaurar_destino_oficial devolve a tabela original.
+    """
+    return preservar_destino_oficial(cursor, nome_tabela)
 
 
 def precriar_destino_antes_procedure(cursor, banco_gx, tabela_staging, tabela_destino):
@@ -440,77 +515,91 @@ def executar_procedure_extracao(cursor, tipo_layout, banco_gx, banco_wf=None, dd
 
     dropar_tabela_se_existir(cursor, banco_gx, destino)
 
-    colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
-    # Sempre pré-cria o destino a partir da staging para layouts mapeados —
-    # a procedure legada costuma falhar silenciosamente no SELECT INTO (Flag).
-    if tipo_layout in LAYOUTS_PRECRIAR_DESTINO:
-        precriar_destino_antes_procedure(cursor, banco_gx, cfg['staging'], destino)
-        if colunas_extra:
-            garantir_colunas_extra(
-                cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
-            )
-        # Confirma staging+destino antes do EXEC: se a procedure abortar a
-        # transação, a carga do arquivo não é desfeita.
-        try:
-            cursor.connection.commit()
-        except Exception:
-            pass
-
-    logger.info("Executando dbo.%s (@BancoDadosGX=%s)", proc, banco_gx)
-
     try:
-        if cfg.get('requer_wf'):
-            if not banco_wf:
-                raise ValueError(f"Procedure {proc} exige @BancoWF.")
-            banco_wf = _validar_identificador_sql(banco_wf.strip())
-            _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
-        elif tipo_layout == 'forn_cli_telefone':
-            _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, ddd_padrao))
-        else:
-            _executar_procedure(cursor, f"EXEC dbo.{proc} ?", (banco_gx,))
-    except Exception as exc:
-        logger.exception("Procedure dbo.%s falhou: %s", proc, exc)
-        try:
-            cursor.connection.rollback()
-        except Exception:
-            pass
-        if not _tabela_existe(cursor, destino):
-            raise
-        logger.warning(
-            "Procedure dbo.%s falhou, mas %s já existe — extração segue (colunas extras / DocIdentificador)",
-            proc, destino,
-        )
+        colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
+        # Sempre pré-cria o destino a partir da staging para layouts mapeados —
+        # a procedure legada costuma falhar silenciosamente no SELECT INTO (Flag).
+        if tipo_layout in LAYOUTS_PRECRIAR_DESTINO:
+            precriar_destino_antes_procedure(cursor, banco_gx, cfg['staging'], destino)
+            if colunas_extra:
+                garantir_colunas_extra(
+                    cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
+                )
+            try:
+                cursor.connection.commit()
+            except Exception:
+                pass
+            # dd/mm/aaaa → aaaa-mm-dd antes do CAST/ISDATE da procedure instalada.
+            from utils.datas_layout import aplicar_datas_layout
+            aplicar_datas_layout(cursor, tipo_layout, fonte='destino')
 
-    if not _tabela_existe(cursor, destino):
-        n_staging = _contar_staging(cursor, cfg['staging'])
-        logger.warning(
-            "Procedure %s concluiu sem %s — recriando a partir da staging (%s regs)",
-            proc, destino, n_staging,
-        )
-        precriar_destino_antes_procedure(cursor, banco_gx, cfg['staging'], destino)
+        logger.info("Executando dbo.%s (@BancoDadosGX=%s)", proc, banco_gx)
+
+        try:
+            if cfg.get('requer_wf'):
+                if not banco_wf:
+                    raise ValueError(f"Procedure {proc} exige @BancoWF.")
+                banco_wf = _validar_identificador_sql(banco_wf.strip())
+                _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
+            elif tipo_layout == 'forn_cli_telefone':
+                _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, ddd_padrao))
+            else:
+                _executar_procedure(cursor, f"EXEC dbo.{proc} ?", (banco_gx,))
+        except Exception as exc:
+            logger.exception("Procedure dbo.%s falhou: %s", proc, exc)
+            try:
+                cursor.connection.rollback()
+            except Exception:
+                pass
+            if not _tabela_existe(cursor, destino):
+                raise
+            logger.warning(
+                "Procedure dbo.%s falhou, mas %s já existe — extração segue (colunas extras / DocIdentificador)",
+                proc, destino,
+            )
+
+        if not _tabela_existe(cursor, destino):
+            n_staging = _contar_staging(cursor, cfg['staging'])
+            logger.warning(
+                "Procedure %s concluiu sem %s — recriando a partir da staging (%s regs)",
+                proc, destino, n_staging,
+            )
+            precriar_destino_antes_procedure(cursor, banco_gx, cfg['staging'], destino)
+            if colunas_extra:
+                garantir_colunas_extra(
+                    cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
+                )
+
+        if not _tabela_existe(cursor, destino):
+            n_staging = _contar_staging(cursor, cfg['staging'])
+            raise RuntimeError(
+                f"Procedure {proc} concluiu, mas {destino} não foi criada em {banco_gx}. "
+                f"Staging possui {n_staging} registro(s). "
+                "Falha ao pré-criar o destino a partir da staging."
+            )
+
+        colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
         if colunas_extra:
             garantir_colunas_extra(
                 cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
             )
+        if tipo_layout == 'forn_cli' or str(tipo_layout).startswith('forn_cli_'):
+            popular_pessoa_docidentificador(cursor, destino)
 
-    if not _tabela_existe(cursor, destino):
-        n_staging = _contar_staging(cursor, cfg['staging'])
-        raise RuntimeError(
-            f"Procedure {proc} concluiu, mas {destino} não foi criada em {banco_gx}. "
-            f"Staging possui {n_staging} registro(s). "
-            "Falha ao pré-criar o destino a partir da staging."
-        )
+        # A procedure legada usa ISDATE (DATEFORMAT da sessão). Dia > 12 vira 1900-01-01.
+        # Relê o texto original da staging (dd/mm/aaaa) e grava aaaa-mm-dd.
+        from utils.datas_layout import aplicar_datas_layout
+        aplicar_datas_layout(cursor, tipo_layout, fonte='staging')
 
-    colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
-    if colunas_extra:
-        garantir_colunas_extra(
-            cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
-        )
-    if tipo_layout == 'forn_cli' or str(tipo_layout).startswith('forn_cli_'):
-        popular_pessoa_docidentificador(cursor, destino)
-
-    logger.info("Procedure dbo.%s concluída → %s", proc, destino)
-    return destino
+        descartar_backup_destino(cursor, destino)
+        logger.info("Procedure dbo.%s concluída → %s", proc, destino)
+        return destino
+    except Exception:
+        try:
+            restaurar_destino_oficial(cursor, destino)
+        except Exception:
+            logger.exception("Falha ao restaurar a tabela oficial %s", destino)
+        raise
 
 
 def executar_pipeline_produto(cursor, banco_gx, banco_wf):
@@ -537,30 +626,179 @@ def executar_pipeline_produto(cursor, banco_gx, banco_wf):
         )
 
     dropar_tabela_se_existir(cursor, banco_gx, destino)
-    precriar_destino_antes_procedure(cursor, banco_gx, staging, destino)
-    colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
-    if colunas_extra:
-        garantir_colunas_extra(
-            cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
-        )
-
-    procedures = cfg.get('procedures') or [cfg['procedure']]
-    for proc in procedures:
-        if not procedure_existe(cursor, proc):
-            raise RuntimeError(
-                f"Procedure dbo.{proc} não encontrada em {banco_gx}. "
-                "Instale os scripts em procedure/Produto/ no banco DadosGX "
-                "e execute up_Replace_Name_DadosGx_Procedures com o nome do banco."
+    try:
+        precriar_destino_antes_procedure(cursor, banco_gx, staging, destino)
+        colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
+        if colunas_extra:
+            garantir_colunas_extra(
+                cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
             )
-        logger.info("Executando dbo.%s (@BancoDadosGX=%s, @BancoWF=%s)", proc, banco_gx, banco_wf)
-        _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
 
-    if not _tabela_existe(cursor, destino):
-        n_staging = _contar_staging(cursor, staging)
+        procedures = cfg.get('procedures') or [cfg['procedure']]
+        for proc in procedures:
+            if not procedure_existe(cursor, proc):
+                raise RuntimeError(
+                    f"Procedure dbo.{proc} não encontrada em {banco_gx}. "
+                    "Instale os scripts em procedure/Produto/ no banco DadosGX "
+                    "e execute up_Replace_Name_DadosGx_Procedures com o nome do banco."
+                )
+            logger.info("Executando dbo.%s (@BancoDadosGX=%s, @BancoWF=%s)", proc, banco_gx, banco_wf)
+            _executar_procedure(cursor, f"EXEC dbo.{proc} ?, ?", (banco_gx, banco_wf))
+
+        if not _tabela_existe(cursor, destino):
+            n_staging = _contar_staging(cursor, staging)
+            raise RuntimeError(
+                f"Pipeline Produto concluiu, mas {destino} não existe em {banco_gx}. "
+                f"Staging possui {n_staging} registro(s)."
+            )
+
+        descartar_backup_destino(cursor, destino)
+        logger.info("Pipeline Produto concluído → %s", destino)
+        return destino
+    except Exception:
+        try:
+            restaurar_destino_oficial(cursor, destino)
+        except Exception:
+            logger.exception("Falha ao restaurar a tabela oficial %s", destino)
+        raise
+
+
+def _primeira_coluna(cursor, tabela, *candidatas):
+    for nome in candidatas:
+        if nome and _coluna_existe(cursor, tabela, nome):
+            return nome
+    return None
+
+
+def executar_pipeline_intercambiavel(cursor, banco_gx, banco_wf):
+    """
+    Publica ProdutoIntercambiavel_MG a partir de Arquivo_Intercambiavel_Tratado.
+
+    Segue o script legado (SELECT DISTINCT + Flag=1 + ProdutoMarca_MarcaCod).
+    Não executa up_13_Trata_Arquivo_Intercambiavel_gx: ela DROP o Tratado e
+    relê Arquivo_Intercambiavel.conteudo, que o Python não grava.
+    """
+    tipo_layout = 'intercambiavel'
+    cfg = obter_config_procedure(tipo_layout)
+    if not cfg:
+        raise ValueError("Layout intercambiavel sem configuração.")
+
+    banco_gx = _validar_identificador_sql(banco_gx.strip())
+    banco_wf = _validar_identificador_sql((banco_wf or '').strip())
+    if not banco_wf:
+        raise ValueError("Pipeline Intercambiável exige BancoHomo (BancoWF).")
+
+    staging = cfg['staging']
+    destino = cfg['destino']
+    gx = _quote_db(banco_gx)
+    wf = _quote_db(banco_wf)
+    stg = _quote_table(staging)
+    dest = _quote_table(destino)
+
+    if not _tabela_existe(cursor, staging):
         raise RuntimeError(
-            f"Pipeline Produto concluiu, mas {destino} não existe em {banco_gx}. "
-            f"Staging possui {n_staging} registro(s)."
+            f"Tabela de staging {staging} não existe em {banco_gx}. "
+            "A carga do arquivo deve ocorrer antes da publicação."
         )
 
-    logger.info("Pipeline Produto concluído → %s", destino)
-    return destino
+    col_cod = _primeira_coluna(cursor, staging, 'CODIGO_PRODUTO')
+    col_ref = _primeira_coluna(cursor, staging, 'PRODUTO_REFERENCIA')
+    col_cod_int = _primeira_coluna(
+        cursor, staging,
+        'PRODUTOINTERCAMBEAVEL_CODIGO', 'CODIGO_PRODUTOINTERCAMBEAVEL',
+        'PRODUTOINTERCAMBIAVEL_CODIGO', 'CODIGO_PRODUTOINTERCAMBIAVEL',
+    )
+    col_ref_int = _primeira_coluna(
+        cursor, staging,
+        'PRODUTOINTERCAMBEAVEL_REFERENCIA', 'PRODUTO_REFERENCIAINTERCAMBEAVEL',
+        'PRODUTOINTERCAMBIAVEL_REFERENCIA', 'PRODUTO_REFERENCIAINTERCAMBIAVEL',
+    )
+    col_marca = _primeira_coluna(
+        cursor, staging, 'MARCA_DESCRICAO', 'MARCA', 'MARCA_CODIGO',
+    )
+    col_marca_cod = _primeira_coluna(cursor, staging, 'MARCA_CODIGO')
+    col_id = _primeira_coluna(cursor, staging, 'IDtabela', 'idTabela', 'ID')
+
+    if not col_cod or not col_ref:
+        raise RuntimeError(
+            f"Staging {staging} sem CODIGO_PRODUTO/PRODUTO_REFERENCIA."
+        )
+
+    pecas = [
+        f"{_quote_col(col_cod)} AS [CODIGO_PRODUTO]",
+        f"{_quote_col(col_ref)} AS [PRODUTO_REFERENCIA]",
+    ]
+    if col_cod_int:
+        pecas.append(
+            f"{_quote_col(col_cod_int)} AS [CODIGO_PRODUTOINTERCAMBEAVEL]"
+        )
+    if col_ref_int:
+        pecas.append(
+            f"{_quote_col(col_ref_int)} AS [PRODUTO_REFERENCIAINTERCAMBEAVEL]"
+        )
+    if col_marca:
+        pecas.append(f"{_quote_col(col_marca)} AS [MARCA]")
+    if col_marca_cod and col_marca_cod != col_marca:
+        pecas.append(f"{_quote_col(col_marca_cod)} AS [MARCA_CODIGO]")
+    if col_id:
+        pecas.append(f"{_quote_col(col_id)} AS [idTabela]")
+
+    dropar_tabela_se_existir(cursor, banco_gx, destino)
+    try:
+        _executar(
+            cursor,
+            f"SELECT DISTINCT {', '.join(pecas)} "
+            f"INTO {gx}.dbo.{dest} FROM {gx}.dbo.{stg}",
+        )
+        if not _tabela_existe(cursor, destino):
+            raise RuntimeError(
+                f"Não foi possível criar {destino} a partir de {staging} em {banco_gx}."
+            )
+
+        colunas_extra = COLUNAS_EXTRA_POS_PRECRIAR.get(tipo_layout)
+        if colunas_extra:
+            garantir_colunas_extra(
+                cursor, banco_gx, tabela_destino=destino, colunas_extra=colunas_extra,
+            )
+
+        if _coluna_existe(cursor, destino, 'Flag'):
+            _executar(
+                cursor,
+                f"UPDATE {gx}.dbo.{dest} SET [Flag] = 1 WHERE [Flag] IS NULL",
+            )
+
+        if (
+            _coluna_existe(cursor, destino, 'ProdutoMarca_MarcaCod')
+            and _coluna_existe(cursor, destino, 'MARCA')
+        ):
+            if (
+                _tabela_existe(cursor, 'Empresa_DePara')
+                and _coluna_existe(cursor, 'Empresa_DePara', 'marc_ds')
+                and _coluna_existe(cursor, 'Empresa_DePara', 'Empresa_MarcaCod')
+            ):
+                _executar(cursor, f"""
+                    UPDATE p
+                    SET p.[ProdutoMarca_MarcaCod] = d.[Empresa_MarcaCod]
+                    FROM {gx}.dbo.{dest} p
+                    INNER JOIN {gx}.dbo.[Empresa_DePara] d
+                        ON d.[marc_ds] = p.[MARCA] COLLATE database_default
+                    WHERE p.[ProdutoMarca_MarcaCod] IS NULL
+                """)
+            _executar(cursor, f"""
+                UPDATE p
+                SET p.[ProdutoMarca_MarcaCod] = d.[Marca_Codigo]
+                FROM {gx}.dbo.{dest} p
+                INNER JOIN {wf}.dbo.[Marca] d
+                    ON d.[Marca_Descricao] = p.[MARCA] COLLATE database_default
+                WHERE p.[ProdutoMarca_MarcaCod] IS NULL
+            """)
+
+        descartar_backup_destino(cursor, destino)
+        logger.info("Pipeline Intercambiável concluído → %s", destino)
+        return destino
+    except Exception:
+        try:
+            restaurar_destino_oficial(cursor, destino)
+        except Exception:
+            logger.exception("Falha ao restaurar a tabela oficial %s", destino)
+        raise

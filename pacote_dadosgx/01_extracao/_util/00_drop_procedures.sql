@@ -1,10 +1,14 @@
 -- =============================================================================
 -- DROP — Procedures de Extração (DadosGX)
 -- Pacote DadosGX — gerar drop antes da reinstalacao
--- Gerado em: 10/08/2026 17:23
+-- Gerado em: 01/10/2026 08:20
 -- =============================================================================
 
 USE [DadosGX_SeuProjeto];  -- ALTERE para o nome real do banco DadosGX
+GO
+
+IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_Extrai_Adiantamento_gx' AND TYPE = 'P')
+    DROP PROCEDURE dbo.[up_01_Extrai_Adiantamento_gx];
 GO
 
 IF EXISTS (SELECT 1 FROM sys.procedures WHERE NAME = 'up_01_Extrai_Financeiro_gx' AND TYPE = 'P')

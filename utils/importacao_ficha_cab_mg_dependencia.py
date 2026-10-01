@@ -170,8 +170,8 @@ def validar_dataframe_depende_ficha_cab_mg(cursor, df, layout_nome=None, layout_
                 if str(c).strip().upper() == 'CHASSI':
                     col_chassi = c
                     break
-        for _, row in df.iterrows():
-            linhas.append([str(row.get(col_chassi, '') or '')])
+        if col_chassi in df.columns:
+            linhas = ([str(v or '')] for v in df[col_chassi])
 
     erros = validar_linhas_dependem_ficha_cab_mg(
         linhas, [{'Descricao': 'CHASSI', 'Posicao': 1}], chassis, ficha_cab_existe=existe,

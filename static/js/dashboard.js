@@ -54,11 +54,11 @@ const tableRoutes = {
 
 // Função para criar barra de progresso COM TEXTO PRETO
 function createProgressBar(percentual, qtd) {
-    if (percentual === undefined || percentual === null) {
+    if (percentual === undefined || percentual === null || Number.isNaN(Number(percentual))) {
         percentual = 0;
     }
 
-    const percentualNum = typeof percentual === 'number' ? percentual : parseFloat(percentual);
+    const percentualNum = Number(percentual) || 0;
 
     // Se QTD for 0, usa cor neutra (cinza)
     let progressColor;
@@ -70,15 +70,16 @@ function createProgressBar(percentual, qtd) {
                 percentualNum >= 40 ? '#f59e0b' : '#ef4444';
     }
 
+    const percentualFmt = Number.isFinite(percentualNum) ? percentualNum.toFixed(1).replace(/\.0$/, '') : '0';
+
     return `
         <div class="progress-container" style="display: flex; align-items: center; gap: 10px;">
             <div class="progress-bar" style="flex: 1; height: 20px; background: #e5e7eb; border-radius: 10px; overflow: hidden;">
-                <div class="progress-fill" style="height: 100%; border-radius: 10px; background: ${progressColor}; width: ${percentualNum}%; display: flex; align-items: center; justify-content: center;">
-                    <span class="progress-text" style="color: #000000; font-size: 11px; font-weight: bold;">
-                        ${percentualNum}%
-                    </span>
-                </div>
+                <div class="progress-fill" style="height: 100%; border-radius: 10px; background: ${progressColor}; width: ${percentualNum}%;"></div>
             </div>
+            <span class="progress-text" style="color: #111827; font-size: 12px; font-weight: bold; min-width: 42px; text-align: right;">
+                ${percentualFmt}%
+            </span>
         </div>
     `;
 }
@@ -142,8 +143,9 @@ function fillTable(tbodyId, dataArray, categoryName) {
 
         // Célula de status
         const statusCell = document.createElement('td');
-        const percentual = item.percentualConclusao || 0;
-        const qtd = item.qtd || 0;
+        const percentual = Number(item.percentualConclusao);
+        const percentualOk = Number.isFinite(percentual) ? percentual : 0;
+        const qtd = Number(item.qtd) || 0;
 
         let statusText = 'Pendente';
         let statusClass = 'status-pendente';
@@ -152,13 +154,13 @@ function fillTable(tbodyId, dataArray, categoryName) {
         if (qtd === 0) {
             statusText = 'Não se aplica';
             statusClass = 'status-inaplicavel';
-        } else if (percentual === 100) {
+        } else if (percentualOk === 100) {
             statusText = 'Concluído';
             statusClass = 'status-concluido';
-        } else if (percentual >= 70) {
+        } else if (percentualOk >= 70) {
             statusText = 'Em Andamento';
             statusClass = 'status-andamento';
-        } else if (percentual >= 40) {
+        } else if (percentualOk >= 40) {
             statusText = 'Parcial';
             statusClass = 'status-parcial';
         }
@@ -182,7 +184,7 @@ function fillTable(tbodyId, dataArray, categoryName) {
 
         // Célula de percentual com barra de progresso
         const percentualCell = document.createElement('td');
-        percentualCell.innerHTML = createProgressBar(percentual, qtd);
+        percentualCell.innerHTML = createProgressBar(percentualOk, qtd);
         percentualCell.style.padding = '12px 8px';
 
         row.appendChild(nameCell);
@@ -433,7 +435,146 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     initializeImportMenu();
+    inicializarEdicaoDataBloco();
 });
+
+function inicializarEdicaoDataBloco() {
+    const cfg = window.blocoDisponivelConfig;
+    if (!cfg || !cfg.podeEditar || !cfg.url) {
+        return;
+    }
+
+    document.addEventListener('click', function (e) {
+        const btnEditar = e.target.closest('.btn-editar-data-bloco');
+        if (btnEditar) {
+            e.preventDefault();
+            e.stopPropagation();
+            abrirEditorDataBloco(btnEditar, cfg);
+            return;
+        }
+        const btnSalvar = e.target.closest('.btn-salvar-data-bloco');
+        if (btnSalvar) {
+            if (btnSalvar.closest('form.form-data-bloco')) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            salvarDataBloco(btnSalvar, cfg);
+        }
+    });
+}
+
+function abrirEditorDataBloco(btn, cfg) {
+    const wrap = btn.closest('.quadro-data-disponivel, .categoria-data');
+    if (!wrap || wrap.querySelector('.editor-data-bloco')) {
+        return;
+    }
+    const editor = document.createElement('span');
+    editor.className = 'editor-data-bloco';
+    const isoAtual = btn.getAttribute('data-iso') || '';
+    const valorInicial = isoParaBr(isoAtual);
+    editor.innerHTML =
+        '<input type="text" class="input-data-bloco" placeholder="DD/MM/AAAA" value="' + valorInicial + '">' +
+        '<button type="button" class="btn-salvar-data-bloco">Salvar</button>';
+    btn.insertAdjacentElement('afterend', editor);
+    const input = editor.querySelector('input');
+    if (input) {
+        input.focus();
+        input.select();
+    }
+}
+
+function salvarDataBloco(btn, cfg) {
+    const editor = btn.closest('.editor-data-bloco');
+    const wrap = btn.closest('.quadro-data-disponivel, .categoria-data');
+    const input = editor ? editor.querySelector('.input-data-bloco') : null;
+    const escopo = wrap ? wrap.getAttribute('data-escopo') : '';
+    const dataOriginal = input ? input.value : '';
+    const data = normalizarDataParaBackend(dataOriginal);
+    if (!escopo || !data) {
+        alert('Informe uma data válida.');
+        return;
+    }
+    btn.disabled = true;
+    fetch(cfg.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ escopo: escopo, data: data })
+    })
+        .then(function (resp) { return resp.json().then(function (json) { return { ok: resp.ok, json: json }; }); })
+        .then(function (result) {
+            if (!result.json || !result.json.success) {
+                alert((result.json && result.json.message) || 'Não foi possível salvar a data.');
+                return;
+            }
+            atualizarTextosDataBloco(result.json.escopo, result.json.data, result.json.iso);
+        })
+        .catch(function () {
+            alert('Erro ao salvar a data.');
+        })
+        .finally(function () {
+            btn.disabled = false;
+        });
+}
+
+function isoParaBr(iso) {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+        return '';
+    }
+    const partes = iso.split('-');
+    return partes[2] + '/' + partes[1] + '/' + partes[0];
+}
+
+function normalizarDataParaBackend(valor) {
+    if (!valor) {
+        return '';
+    }
+    const texto = String(valor).trim().replace(/\./g, '/');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+        return texto;
+    }
+    const br = texto.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (br) {
+        const dia = br[1].padStart(2, '0');
+        const mes = br[2].padStart(2, '0');
+        let ano = br[3];
+        if (ano.length === 2) {
+            ano = '20' + ano;
+        }
+        return ano + '-' + mes + '-' + dia;
+    }
+    return texto;
+}
+
+function atualizarTextosDataBloco(escopo, dataFmt, iso) {
+    document.querySelectorAll('[data-escopo="' + escopo + '"]').forEach(function (el) {
+        el.classList.remove('pendente');
+        const texto = el.querySelector('.bloco-data-texto');
+        const prefixo = el.querySelector('.bloco-data-prefixo');
+        const icone = el.querySelector('i.fa-clock, i.fa-calendar-check');
+        if (texto) {
+            texto.textContent = dataFmt;
+        }
+        if (prefixo) {
+            prefixo.textContent = el.classList.contains('categoria-data')
+                ? 'Disponível desde '
+                : 'De/Para disponível desde ';
+        }
+        if (icone) {
+            icone.classList.remove('fa-clock');
+            icone.classList.add('fa-calendar-check');
+        }
+        el.querySelectorAll('.btn-editar-data-bloco').forEach(function (b) {
+            b.setAttribute('data-iso', iso || '');
+            b.setAttribute('title', 'Alterar data');
+        });
+        const editor = el.querySelector('.editor-data-bloco');
+        if (editor) {
+            editor.remove();
+        }
+    });
+}
 
 function initializeImportMenu() {
     const menuWithSubmenu = document.querySelectorAll('.menu-with-submenu > a');

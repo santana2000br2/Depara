@@ -46,8 +46,8 @@ PRINT '=========================================================================
 PRINT ' Extrai_Titulo - Atualiza CPFCNPJ'
 PRINT '=========================================================================================='
 
-SELECT @CMD = '
-    UPDATE ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Financeiro_Tratado SET
+SELECT @CMD = N'
+    UPDATE ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.dbo.Arquivo_Financeiro_Tratado SET
         CPF_CNPJ = RTRIM(LTRIM(dbo.FN_RemoveCaracteresNaoInteiros(CPF_CNPJ)))
 '
 EXEC sp_executesql @CMD
@@ -56,11 +56,11 @@ PRINT '=========================================================================
 PRINT ' Cria a cópia do Arquivo_Financeiro_Tratado para Migração'
 PRINT '=========================================================================================='
 
-SELECT @CMD = '
-    IF ( NOT EXISTS (SELECT 1 FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.sys.objects WHERE type = ''U'' AND name =''Titulo_MG'') )
+SELECT @CMD = N'
+    IF ( NOT EXISTS (SELECT 1 FROM ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.sys.objects WHERE type = ''U'' AND name =''Titulo_MG'') )
     BEGIN
-        SELECT a.* INTO ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Titulo_MG
-        FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Arquivo_Financeiro_Tratado a
+        SELECT a.* INTO ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.dbo.Titulo_MG
+        FROM ' + QUOTENAME(LTRIM(RTRIM(@BancoDadosGX))) + N'.dbo.Arquivo_Financeiro_Tratado a
         WHERE 1 = 1
     END
 '
@@ -277,9 +277,9 @@ PRINT '=========================================================================
 
 SELECT @CMD = '
     UPDATE a SET
-        a.DATA_EMISSAO = REPLACE(a.DATA_EMISSAO,''/'',''-'')
-        ,a.DATA_ENTRADA = REPLACE(a.DATA_ENTRADA,''/'',''-'')
-        ,a.DATA_VENCIMENTO = REPLACE(a.DATA_VENCIMENTO,''/'',''-'')
+        a.DATA_EMISSAO = CASE WHEN a.DATA_EMISSAO IS NULL OR LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_EMISSAO, 23))) = '''' THEN CONVERT(varchar(30), a.DATA_EMISSAO) ELSE COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_EMISSAO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_EMISSAO, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_EMISSAO, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_EMISSAO, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_EMISSAO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'') END
+        ,a.DATA_ENTRADA = CASE WHEN a.DATA_ENTRADA IS NULL OR LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ENTRADA, 23))) = '''' THEN CONVERT(varchar(30), a.DATA_ENTRADA) ELSE COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ENTRADA, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ENTRADA, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ENTRADA, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ENTRADA, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_ENTRADA, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'') END
+        ,a.DATA_VENCIMENTO = CASE WHEN a.DATA_VENCIMENTO IS NULL OR LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENCIMENTO, 23))) = '''' THEN CONVERT(varchar(30), a.DATA_VENCIMENTO) ELSE COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENCIMENTO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENCIMENTO, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENCIMENTO, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENCIMENTO, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENCIMENTO, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'') END
     FROM
         ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Titulo_MG a
     WHERE

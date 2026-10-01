@@ -132,7 +132,7 @@ LAYOUTS_RULES_JSON = """
     "Forn_cli_Endereco": {
         "CPF_CNPJ": {"Obrigatorio": true, "Tipo": "CPF_CNPJ"},
         "ENDERECO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 150},
-        "NUMERO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 20},
+        "NUMERO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 20},
         "COMPLEMENTO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 100},
         "CEP": {"Obrigatorio": true, "Tipo": "CEP"},
         "BAIRRO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 100},
@@ -140,7 +140,7 @@ LAYOUTS_RULES_JSON = """
         "COD_IBGE": {"Obrigatorio": false, "Tipo": "Numerico"},
         "ESTADO": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 2, "ValoresPermitidos": ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]},
         "PAIS": {"Obrigatorio": true, "Tipo": "Texto", "TamanhoMax": 50},
-        "TIPO_ENDERECO": {"Obrigatorio": true, "Tipo": "Texto", "ValoresPermitidos": ["RESIDENCIAL", "COMERCIAL", "ENTREGA", "COBRANCA"]},
+        "TIPO_ENDERECO": {"Obrigatorio": true, "Tipo": "Texto", "ValoresPermitidos": ["RESIDENCIAL", "COMERCIAL", "ENTREGA", "COBRANCA", "1", "2", "3", "4"]},
         "TIPO_LOGRADOURO": {"Obrigatorio": false, "Tipo": "Texto", "TamanhoMax": 50}
     },
     "Forn_cli_Documento": {

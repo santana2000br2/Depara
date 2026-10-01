@@ -235,7 +235,7 @@ def handle_file_too_large(_error):
     max_mb = round(max_bytes / (1024 * 1024), 1) if max_bytes else 0
     message = (
         f"Arquivo excede o limite de upload ({max_mb} MB). "
-        "Divida o arquivo em partes menores."
+        "O arquivo precisa ter no máximo 1 GB."
     )
     logging.getLogger('auth').error(
         "RequestEntityTooLarge: path=%s content_length=%s limite=%s",

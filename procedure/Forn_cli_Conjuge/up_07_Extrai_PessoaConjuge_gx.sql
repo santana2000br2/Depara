@@ -132,10 +132,7 @@ PRINT '=========================================================================
 SELECT @CMD = '
 
 	UPDATE a SET
-		a.DT_ANIVER_CONJUGE = CASE
-						WHEN ISDATE(REPLACE(a.DT_ANIVER_CONJUGE,''/'',''-'')) = 0 THEN ''1900-01-01'' 
-						ELSE REPLACE(a.DT_ANIVER_CONJUGE,''/'',''-'')  
-					END
+		a.DT_ANIVER_CONJUGE = COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER_CONJUGE, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER_CONJUGE, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER_CONJUGE, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER_CONJUGE, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DT_ANIVER_CONJUGE, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'')
 	FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.FichaCadastralConjuge_MG a
 	WHERE 
 		a.Flag = 1

@@ -3,7 +3,7 @@ from flask import (
     session, request, flash
 )
 from config import Config
-from db.connection import conectar_banco
+from db.connection import conectar_banco, garantir_colunas_dadosgx
 from logger import logger
 from auth.security import verificar_senha, hash_senha
 from utils.credential_crypto import (
@@ -52,10 +52,12 @@ auth_bp = Blueprint("auth", __name__)
 _CAMPOS_CREDENCIAL = frozenset({
     "senhaproducao",
     "senhahomologacao",
+    "senhadadosgx",
     "senhaProducao",
     "senhaHomologacao",
     "usuarioProducao",
     "usuariohomologacao",
+    "usuariodadosgx",
 })
 
 
@@ -67,7 +69,7 @@ def projeto_para_sessao(projeto):
         k: v for k, v in projeto.items()
         if k not in _CAMPOS_CREDENCIAL
         and "senha" not in k.lower()
-        and k not in ("usuarioProducao", "usuariohomologacao")
+        and k not in ("usuarioProducao", "usuariohomologacao", "usuariodadosgx")
     }
 
 
@@ -80,6 +82,8 @@ def buscar_projeto_completo(projeto_id):
 
     cursor = conn.cursor()
     try:
+        garantir_colunas_dadosgx(cursor)
+        conn.commit()
         cursor.execute("""
             SELECT
                 ProjetoID,
@@ -87,6 +91,7 @@ def buscar_projeto_completo(projeto_id):
                 DadosGX,
                 servidorproducao,
                 servidorhomologacao,
+                servidordadosgx,
                 BancoHomo,
                 PontoFocal,
                 ConsultorLider,
@@ -116,6 +121,7 @@ def buscar_projeto_completo(projeto_id):
                 "DadosGX": projeto.DadosGX,
                 "servidorproducao": projeto.servidorproducao,
                 "servidorhomologacao": projeto.servidorhomologacao,
+                "servidordadosgx": getattr(projeto, "servidordadosgx", None),
                 "BancoHomo": projeto.BancoHomo,
                 "PontoFocal": projeto.PontoFocal,
                 "ConsultorLider": projeto.ConsultorLider,

@@ -91,7 +91,7 @@ def layout_eh_financeiro(nome_layout, descricao=None, colunas=None):
         # Aceita nome legado combinado no cadastro de layout
         if 'TITULO_NUMERO/TITULO_SERIE' in nomes:
             nomes.add('TITULO_NUMERO')
-        if FINANCEIRO_COLUNAS_CHAVE.issubset(nomes):
+        if FINANCEIRO_COLUNAS_CHAVE.issubset(nomes) and 'TIPO_FICHARAZAO' not in nomes:
             return True
         if (
             'TIPO_MOVFINANCEIRO' in nomes

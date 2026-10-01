@@ -272,10 +272,7 @@ SELECT @CMD = '
     WHERE a.Flag = 1
 
     UPDATE a
-    SET a.DATA_VENDA = CASE
-            WHEN a.DATA_VENDA IS NULL OR REPLACE(a.DATA_VENDA, ''/'', ''-'') = '''' OR ISDATE(a.DATA_VENDA) = 0 THEN ''1900-01-01''
-            ELSE REPLACE(a.DATA_VENDA, ''/'', ''-'')
-        END
+    SET a.DATA_VENDA = COALESCE(CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENDA, 23))), 10), ''-'', ''/''), ''.'', ''/''), 103), 23),CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENDA, 23))), 10), ''/'', ''-''), 23), 23),CONVERT(varchar(10), TRY_CONVERT(date, LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENDA, 23))), 112), 23),CASE WHEN LEN(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENDA, 23))), 10)) <= 8 THEN CONVERT(varchar(10), TRY_CONVERT(date, REPLACE(REPLACE(LEFT(LTRIM(RTRIM(CONVERT(varchar(30), a.DATA_VENDA, 23))), 10), ''-'', ''/''), ''.'', ''/''), 3), 23) END,''1900-01-01'')
     FROM ' + LTRIM(RTRIM(@BancoDadosGX)) + '.dbo.Veiculo_MG a
     WHERE a.Flag = 1
 

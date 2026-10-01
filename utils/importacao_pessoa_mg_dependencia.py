@@ -66,6 +66,7 @@ def detectar_tipo_layout(nome_layout, descricao=None, colunas=None):
     from utils.importacao_forn_cli_endereco import layout_eh_forn_cli_endereco
     from utils.importacao_movimento_estoque import layout_eh_movimento_estoque
     from utils.importacao_financeiro import layout_eh_financeiro
+    from utils.importacao_adiantamento import layout_eh_adiantamento
 
     if layout_eh_forn_cli_endereco(nome_layout, descricao, colunas):
         return 'forn_cli_endereco'
@@ -75,6 +76,8 @@ def detectar_tipo_layout(nome_layout, descricao=None, colunas=None):
         return 'forn_cli_enquadramento'
     if layout_eh_movimento_estoque(nome_layout, descricao, colunas):
         return 'movimento_estoque'
+    if layout_eh_adiantamento(nome_layout, descricao, colunas):
+        return 'adiantamento'
     if layout_eh_financeiro(nome_layout, descricao, colunas):
         return 'financeiro'
 
@@ -101,11 +104,14 @@ def detectar_tipo_layout(nome_layout, descricao=None, colunas=None):
                 return tipo
 
     if colunas:
-        nomes = {
-            str(c.get('Descricao') or c).strip().upper()
-            for c in colunas
-            if (c.get('Descricao') if isinstance(c, dict) else c)
-        }
+        nomes = set()
+        for c in colunas:
+            if isinstance(c, dict):
+                nome = str(c.get('Descricao') or '').strip().upper()
+            else:
+                nome = str(c or '').strip().upper()
+            if nome:
+                nomes.add(nome)
         if {'NUMERO_OS', 'CODIGO_VEICULO', 'CPF_CNPJ'}.issubset(nomes):
             if 'PRODUTO_REFERENCIA' not in nomes and 'PRODUTO_QUANTIDADE' not in nomes:
                 return 'fseg_cab'
@@ -428,8 +434,8 @@ def validar_dataframe_depende_pessoa_mg(cursor, df, layout_nome=None, layout_des
                 if str(c).strip().upper() == 'CPF_CNPJ':
                     col_cpf = c
                     break
-        for _, row in df.iterrows():
-            linhas.append([str(row.get(col_cpf, '') or '')])
+        if col_cpf in df.columns:
+            linhas = ([str(v or '')] for v in df[col_cpf])
 
     colunas = colunas_layout or [{'Descricao': 'CPF_CNPJ', 'Posicao': 1}]
     erros = validar_linhas_dependem_pessoa_mg(linhas, colunas, cpfs, pessoa_mg_existe=existe)

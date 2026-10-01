@@ -133,10 +133,11 @@ def _deduplicar_colunas_dataframe(df):
     """Se o layout repetir o mesmo nome, combina as colunas (primeiro valor preenchido)."""
     if df is None or df.empty:
         return df
+    if hasattr(df, "iter_chunks") and hasattr(df, "caminho"):
+        return df
     nomes = [str(c).strip() for c in df.columns]
     chaves = [n.upper() for n in nomes]
     if len(chaves) == len(set(chaves)):
-        df = df.copy()
         df.columns = nomes
         return df
 
@@ -160,7 +161,11 @@ def _deduplicar_colunas_dataframe(df):
 
 
 def _normalizar_colunas_dataframe(df):
-    df = _deduplicar_colunas_dataframe(df.copy())
+    """Ajusta nomes de coluna sem duplicar o DataFrame em memória."""
+    if hasattr(df, "iter_chunks") and hasattr(df, "caminho"):
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
+    df = _deduplicar_colunas_dataframe(df)
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
@@ -422,21 +427,56 @@ def inserir_staging(cursor, banco_gx, df, tabela_staging=None):
     placeholders = ', '.join(['?'] * len(col_pos))
     sql = f"INSERT INTO dbo.{tbl} ({cols_sql}) VALUES ({placeholders})"
 
-    matriz = df.to_numpy()
-    registros = []
-    for linha in matriz:
-        valores = [_celula_para_sql(linha[i]) for i, _ in col_pos]
-        registros.append(tuple(valores))
-
     if hasattr(cursor, 'fast_executemany'):
         cursor.fast_executemany = True
 
     chunk = 1000
-    for i in range(0, len(registros), chunk):
-        cursor.executemany(sql, registros[i:i + chunk])
+    indices = [i for i, _ in col_pos]
+    total = 0
 
-    logger.info("%s registros inseridos em %s", len(registros), tabela_staging)
-    return len(registros)
+    def _inserir_bloco(bloco):
+        registros = [
+            tuple(_celula_para_sql(row[i]) for i in indices)
+            for row in bloco.itertuples(index=False, name=None)
+        ]
+        if registros:
+            cursor.executemany(sql, registros)
+        return len(registros)
+
+    if hasattr(df, 'iter_chunks'):
+        n = len(df)
+        logger.info("Inserindo %s registros em %s (lotes de %s, CSV)", n, tabela_staging, chunk)
+        for bloco in df.iter_chunks(chunk):
+            total += _inserir_bloco(bloco)
+            if total < n and total % (chunk * 25) < chunk:
+                logger.info("Staging em progresso: %s/%s (%.0f%%)", total, n, 100.0 * total / max(n, 1))
+                try:
+                    from utils.importacao_controle import reportar_progresso
+                    pct = 50 + (30.0 * total / max(n, 1))
+                    reportar_progresso(
+                        percentual=pct,
+                        mensagem=f"Lote processado: {total}/{n} registros na staging",
+                        TotalRegistros=n,
+                        RegistrosProcessados=total,
+                    )
+                except Exception:
+                    pass
+        logger.info("%s registros inseridos em %s", total, tabela_staging)
+        return total
+
+    n = len(df)
+    logger.info("Inserindo %s registros em %s (lotes de %s)", n, tabela_staging, chunk)
+    for start in range(0, n, chunk):
+        bloco = df.iloc[start:start + chunk]
+        total += _inserir_bloco(bloco)
+        if total < n and (start // chunk) % 25 == 24:
+            logger.info(
+                "Staging em progresso: %s/%s (%.0f%%)",
+                total, n, 100.0 * total / n,
+            )
+
+    logger.info("%s registros inseridos em %s", total, tabela_staging)
+    return total
 
 
 def criar_ou_recarregar_destino(cursor, banco_gx, tabela_destino, tabela_staging):
@@ -568,18 +608,6 @@ def _normalizar_campos_flag_1(cursor, gx, dest, refs):
                 END
             FROM {gx}.dbo.{dest} a
             {where_flag}
-        """)
-
-    if _coluna_existe(cursor, TABELA_DESTINO, 'LIM_CREDITO_VALIDADE'):
-        _executar(cursor, f"""
-            UPDATE a
-            SET a.LIM_CREDITO_VALIDADE = CASE
-                    WHEN ISDATE(REPLACE(a.LIM_CREDITO_VALIDADE, '/', '-')) = 0 THEN '1900-01-01'
-                    ELSE REPLACE(a.LIM_CREDITO_VALIDADE, '/', '-')
-                END
-            FROM {gx}.dbo.{dest} a
-            {where_flag}
-              AND ISNUMERIC(a.LIM_CREDITO) = 1
         """)
 
     if (
@@ -829,31 +857,8 @@ def executar_pipeline_pos_carga(cursor, banco_gx, banco_wf):
               AND ({doc} IS NULL OR {doc} = '')
         """)
 
-    if _coluna_existe(cursor, TABELA_DESTINO, 'DT_ANIVER'):
-        _executar(cursor, f"""
-            UPDATE a
-            SET a.DT_ANIVER = CASE
-                    WHEN ISDATE(REPLACE(CONVERT(VARCHAR(30), a.DT_ANIVER, 121), '/', '-')) = 0
-                        THEN '1900-01-01'
-                    ELSE REPLACE(CONVERT(VARCHAR(30), a.DT_ANIVER, 121), '/', '-')
-                END
-            FROM {gx}.dbo.{dest} a
-            {where_flag}
-        """)
-
-    if _coluna_existe(cursor, TABELA_DESTINO, 'DATA_CADASTRO'):
-        _executar(cursor, f"""
-            UPDATE a
-            SET a.DATA_CADASTRO = CASE
-                    WHEN a.DATA_CADASTRO IS NULL OR CONVERT(VARCHAR(30), a.DATA_CADASTRO, 121) = ''
-                        THEN CAST(GETDATE() AS date)
-                    WHEN ISDATE(REPLACE(CONVERT(VARCHAR(30), a.DATA_CADASTRO, 121), '/', '-')) = 0
-                        THEN '1900-01-01'
-                    ELSE REPLACE(CONVERT(VARCHAR(30), a.DATA_CADASTRO, 121), '/', '-')
-                END
-            FROM {gx}.dbo.{dest} a
-            {where_flag}
-        """)
+    from utils.datas_layout import aplicar_datas_layout
+    aplicar_datas_layout(cursor, 'forn_cli', fonte='staging')
 
 
 def obter_resumo_importacao(cursor, banco_gx, tabela_destino=None):
